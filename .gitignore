@@ -1,0 +1,12 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+Data/Pre_Processing/Projections_August.csv
+Data/Pre_Processing/RealData_August.csv
+Data/Pre_Processing/data.nc
+HPC/Export/output_data/Sardinia/Plots/
+HPC/Export/output_data/Temp/Plots/
+HPC/Export/.venv
+HPC/Export/.idea/
+Plots/
