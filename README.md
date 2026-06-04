@@ -1,4 +1,4 @@
-# A Convolution Process for Sea Surface Temperature Hot-Spot Identification in the Mediterranean Sea
+# Covariance modeling for flow-driven spatial domains via directed linear networks
 
 ## Overview
 
