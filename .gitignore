@@ -2,6 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+.idea/
 Data/Pre_Processing/Projections_August.csv
 Data/Pre_Processing/RealData_August.csv
 Data/Pre_Processing/data.nc
