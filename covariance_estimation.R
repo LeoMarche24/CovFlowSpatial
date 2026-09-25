@@ -31,7 +31,7 @@ plot_size <- 7
 
 #### Data loading ####
 
-domain <- "Temp"
+domain <- "Sardinia"
 
 load(paste0("Data/Data_", domain, ".RData"))
 load(paste0("Data/Projections_", domain, ".RData"))
@@ -53,7 +53,7 @@ sill_eucl <- rep(0, len)
 range_eucl <- rep(0, len)
 
 fuvs <- rep(0, len)
-bias45 <- rep(0,len)
+bias <- rep(0,len)
 
 covariances_45 <- NULL
 distances_45 <- NULL
@@ -71,15 +71,15 @@ for(y in 1:len)
   data_real <- df[which(df$year==years[y]), c(1:5,7:8)]
   names(data_real)[5] <- "value"
   results <- compute_matrices(df = data_real)
-  dist <- results[[2]]
-  PI <- results[[3]]
-  inx <- results[[4]]
+  dist <- results[[1]]
+  PI <- results[[2]]
+  inx <- results[[3]]
   data_real <- data_real[inx,]
   dist <- dist[inx, inx]
   PI <- PI[inx, inx]
   
   if(all(is.na(PI)))
-    Error("All transition probabilities are NA")
+    stop("All transition probabilities are NA")
   
   coords <- data_real[, 1:2]
   
@@ -96,9 +96,9 @@ for(y in 1:len)
   inx2 <- which(!is.na(data_proj$value[nearest]))
   data_real <- data_real[inx2,]
   projections <- data_proj$value[nearest][inx2]
-  bias45[y] <- mean(data_real$value - projections)
+  bias[y] <- mean(data_real$value - projections)
   
-  projections_adj <- projections + bias45[y]
+  projections_adj <- projections + bias[y]
   
   res <- data_real$value - projections_adj
   res_total[[y]] <- res
@@ -118,14 +118,8 @@ for(y in 1:len)
       }
     }
   }
-  distances <- initialize(dist, P)
-  updated <- TRUE
   print("start composing distance object")
-  while (updated)
-  {
-    updated <- FALSE
-    distances <- lapply(distances, function(p) update(p,dist, P))
-  }
+  distances <- compose_distances(dist, P)
   
   U <- evaluate_U(PI)
   
@@ -165,122 +159,17 @@ for(y in 1:len)
                np = 1)
   mean_variogram_temp <- na.omit(mean_variogram_temp)
   params_temp <- fit_covariance(mean_variogram_temp, exponential_kernel,
-                                c(max(variogram$gamma), max(variogram$dist)/3))
+                                c(max(variogram$gamma, na.rm = T),
+                                  max(variogram$dist, na.rm = T)/3))
   
   sill_eucl[y] <- params_temp[1]
   range_eucl[y] <- params_temp[2]
   
 }
 
-#### Assess the final estimation ####
-
-plot(years, unlist(lapply(res_total, mean)), pch = 16, col = third)
-plot(bias45, pch = 16, col = third)
-
-mean_covariance_45 <- data.frame(dist = round(colMeans(distances_45, na.rm = T)), 
-                                 gamma = colMeans(covariances_45), 
-                                 np = 1)
-
-covariances_45 <- melt(covariances_45)
-colnames(covariances_45) <- c("Row", "Column", "Value")
-covariances_45$Distance <- 
-  round(colMeans(distances_45, na.rm = T)[covariances_45$Column])
-
-ggplot(covariances_45, aes(x = factor(Distance), y = Value, group = Row)) + 
-  geom_line(color = "black") +  # Set color for the lines
-  labs(x = "Distance", y = "Values") +
-  theme_minimal()
-
-covariances_45 <- 
-  covariances_45[which(!is.na(covariances_45$Distance)),]
-
-quant_df <- covariances_45 %>%
-  group_by(Distance) %>%
-  summarise(
-    q05 = quantile(Value, 0.2),
-    q25 = quantile(Value, 0.4),
-    q50 = quantile(Value, 0.50),
-    q75 = quantile(Value, 0.6),
-    q95 = quantile(Value, 0.8)
-  )
-
-p <- ggplot(quant_df, aes(x = as.numeric(Distance))) +
-  geom_ribbon(aes(ymin = q25, ymax = q75),
-              fill = third, alpha = 0.6) +     # Central band
-  geom_ribbon(aes(ymin = q05, ymax = q95),
-              fill = third, alpha = 0.3) +     # External band
-  geom_line(data = mean_covariance_45,
-            aes(x = dist, y = gamma),
-            color = "black", linewidth = 1.2) +     # variogramma medio
-  labs(x = "Distance (meters)", y = "Semi-variogram") +
-  ylim(c(-0.5, 1.1)) +
-  theme_minimal() +
-  theme(
-    axis.text = element_text(size = plot_size*2),
-    axis.title = element_text(size = plot_size*2),
-    legend.text = element_text(size = plot_size*2),
-    legend.title = element_text(size = plot_size*2),
-    strip.text = element_text(size = plot_size*2)
-  )
-p
-
-mean_covariance_45_eucl <- data.frame(dist = colMeans(distances_45_eucl), 
-                                     gamma = colMeans(variograms_45_eucl))
-
-variograms_45_eucl <- melt(variograms_45_eucl)
-colnames(variograms_45_eucl) <- c("Row", "Column", "Value")
-variograms_45_eucl$Distance <- 
-  colMeans(distances_45_eucl)[variograms_45_eucl$Column]
-
-ggplot(variograms_45_eucl, aes(x = factor(Distance), y = Value, group = Row)) + 
-  geom_line(color = "black") +  # Set color for the lines
-  labs(x = "Distance", y = "Values") +
-  theme_minimal()
-
-quant_df <- variograms_45_eucl %>%
-  group_by(Distance) %>%
-  summarise(
-    q05 = quantile(Value, 0.05),
-    q25 = quantile(Value, 0.25),
-    q50 = quantile(Value, 0.50),
-    q75 = quantile(Value, 0.75),
-    q95 = quantile(Value, 0.95)
-  )
-
-p <- ggplot(quant_df, aes(x = as.numeric(Distance))) +
-  geom_ribbon(aes(ymin = q25, ymax = q75),
-              fill = third, alpha = 0.6) +     # Central band
-  geom_ribbon(aes(ymin = q05, ymax = q95),
-              fill = third, alpha = 0.3) +     # External band
-  geom_line(data = mean_covariance_45_eucl,
-            aes(x = dist, y = gamma),
-            color = "black", linewidth = 1.2) +     # variogramma medio
-  labs(x = "Distance (meters)", y = "Semi-variance") +
-  coord_cartesian(ylim = c(0, 2)) +   # ZOOM senza eliminare i ribbon
-  theme_minimal() +
-  theme(
-    axis.text = element_text(size = plot_size*2),
-    axis.title = element_text(size = plot_size*2),
-    legend.text = element_text(size = plot_size*2),
-    legend.title = element_text(size = plot_size*2),
-    strip.text = element_text(size = plot_size*2)
-  )
-p
-
-sill45 <- mean(fuvs)
-
-range45 <- fit_range(mean_covariance_45, exponential_covariance,
-                     max(mean_covariance_45$dist)/3, sill45)
-
-mean_variogram_temp$np <- 1
-res <- fit_covariance(mean_variogram_temp, exponential_kernel,
-                     c(max(mean_variogram_temp$gamma), max(mean_variogram_temp$dist)/3))
-
-sill45_eucl <- res[1]
-range45_eucl <- res[2]
-
-#### Saving ####
-
-save(sill45, range45, sill45_eucl, range45_eucl, bias45,
-     file = paste0("Data/Covariance_Data_45_", domain, ".RData"))
+save(sill, range, bias,
+     sill_eucl, range_eucl, res_total, fuvs,
+     covariances_45, distances_45,
+     variograms_45_eucl, distances_45_eucl,
+     file = paste0("Data/Covariance_Estimation_45_", domain, ".RData"))
 

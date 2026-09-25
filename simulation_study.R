@@ -6,7 +6,6 @@ library(spatstat)
 library(igraph)
 library(sf)
 library(progress)
-library(ggmap)
 library(parallel)
 
 source("functions_network.R")
@@ -19,37 +18,19 @@ fourth <- "#333399"
 col5 <- rgb(204/255, 0/255, 0/255)
 grey <- "grey80"
 
-domain <- "Sardinia"
+domain <- "Temp"
 load(paste0("Data/Data_", domain, ".RData"))
 load(paste0("Data/bbox_", domain, ".RData"))
 df <- df[which(df$years == 2022) ,]
-
-library(ggmap)
-register_stadiamaps("424ec34b-4e14-4acc-8aa9-9e8ab4f4fbc9", write = FALSE)
-map <- get_stadiamap(bbox, zoom = 8, maptype = "alidade_smooth")
-
-ggplot(df[which(!is.na(df$east) & !is.na(df$north) & !is.na(df$temperature)) ,], 
-       aes(x=lon, y=lat, fill=temperature)) + 
-  geom_raster() + 
-  scale_fill_gradient(low = col2, high = col1) +
-  theme_minimal()
-
-ggmap(map, darken = c(.356,"white")) + 
-  geom_tile(
-    data = df[which(!is.na(df$east) & !is.na(df$north) & !is.na(df$temperature)), ],
-    mapping = aes(x = lon, y = lat, fill = temperature)
-  ) + 
-  scale_fill_gradient(low = col2, high = col1) +
-  theme_minimal()
 
 df$value <- df$temperature
 inx <- which(!is.na(df$east) & !is.na(df$north) & !is.na(df$value))
 B <- length(inx)
 results <- compute_matrices(df = df)
-lines <- results[[1]]
-dist <- results[[2]]
-PI <- results[[3]]
-inx <- results[[4]]
+dist <- results[[1]]
+PI <- results[[2]]
+inx <- results[[3]]
+lines <- build_network_lines(df, dist)
 
 PI <- PI[inx, inx]
 dist <- dist[inx, inx]
@@ -57,16 +38,8 @@ dist <- dist[inx, inx]
 sources <- which(colSums(!is.na(PI)) == 0)
 outlets <- which(rowSums(PI, na.rm=T) < 0.99)
 
-g <- graph_from_adjacency_matrix(ifelse(is.na(dist), 0, 1), mode = "directed")
-has_cycles <- !is_acyclic(g)
-print("The built network has a cycle: ")
-print(has_cycles)
-plot_size <- 5
-p <- plot_lin_net(lines, df[, 1:2], plot_size, map, inx, sources, outlets)
-p
-
 df_eucl <- df[inx,]
-coordinates(df_eucl) <- c("lon", "lat")
+coordinates(df_eucl) <- c("longitude", "latitude")
 
 B <- dim(PI)[1]
 P <- PI
@@ -82,17 +55,8 @@ for(i in 1:B)
   }
 }
 
-distances <- initialize(dist, P)
-updated <- TRUE
 print("start composing distance object")
-iter <- 1
-while (updated)
-{
-  print(paste0("iteration ", iter))
-  iter <- iter + 1
-  updated <- FALSE
-  distances <- lapply(distances, function(p) update(p,dist, P))
-}
+distances <- compose_distances(dist, P)
 
 U <- evaluate_U(PI)
 
@@ -100,7 +64,7 @@ U <- evaluate_U(PI)
 
 sill <- 1
 range <- 2e6
-cov <- build_covariances(sill, range, distances, U, spherical_covariance)
+cov <- build_covariances(sill, range, distances, U = U, fun = spherical_covariance)
 image(cov)
 eigen(cov)$values
 
@@ -118,12 +82,14 @@ values <- df$temperature[inx]
 sill <- 1
 B <- length(distances)
 R <- 5
-ex1 <- 5e5
-ex2 <- 2e6
+ex1 <- 5e4
+ex2 <- 2e5
 range <- seq(ex1, ex2, length = R)
 K <- 100
-l <- 15
+l <- 10
 model <- "Exponential"
+output <- paste0("Plots/Simulation/", model, "/", domain, "/")
+dir.create(output, recursive = T, showWarnings = F)
 covariances <- lapply(range, function(x) vector('list', K))
 covariances_eucl <- lapply(range, function(x) vector('list', K))
 sills <- matrix(0, nrow = K, ncol = R)
@@ -140,16 +106,7 @@ MSE <- matrix(0, nrow = K, ncol = R)
 MSE_eucl <- matrix(0, nrow = K, ncol = R)
 
 coords <- df_eucl@coords
-lat_mean <- mean(coords[,2])
-km_per_deg_lon <- 111 * cos(lat_mean * pi / 180)
-km_per_deg_lat <- 111
-
-# Trasformo le coordinate in "pseudo-km"
-coords_km <- coords
-coords_km[,1] <- coords[,1] * km_per_deg_lon
-coords_km[,2] <- coords[,2] * km_per_deg_lat
-
-dist_eucl <- as.matrix(dist(coords_km))
+dist_eucl <- as.matrix(dist(coords))
 
 simulation_distribution <- do.call(rbind, lapply(1:K, function(i)
 {
@@ -223,26 +180,24 @@ for (r in 1:R)
     
     # Eucliean framework
     
-    cov_eucl <- calc_covariance(df_eucl[train,]@coords, simulation[train])
+    covariance_eucl_temp <- calc_covariance(df_eucl[train,]@coords, simulation[train])
     
-    covariances_eucl[[r]][[iter]] <- cov_eucl
+    covariances_eucl[[r]][[iter]] <- covariance_eucl_temp
     
-    variogram_eucl <- calc_variogram(df_eucl[train,]@coords, simulation[train])
+    sill_eucl <- covariance_eucl_temp$gamma[1]
     
-    params <- fit_covariance(variogram_eucl, exponential_kernel,
-                            c(max(variogram_eucl$gamma), max(variogram_eucl$dist/3)))
-    sill_eucl <- params[1]
+    range_eucl <- fit_range(covariance_eucl_temp, exponential_covariance,
+                            max(covariance_eucl_temp$dist/3), sill_eucl)
     sills_eucl[iter, r] <- sill_eucl
-    range_eucl <- params[2]
     ranges_eucl[iter, r] <- range_eucl
     
-    if (params[2] == 0)
+    if (range_eucl == 0)
     {
       covariance_est_eucl <- diag(rep(sill_eucl, B))
     }
     else
     {
-      covariance_est_eucl <- exponential_covariance(params,
+      covariance_est_eucl <- exponential_covariance(c(sill_eucl, range_eucl),
                                                     as.matrix(dist_eucl))
     }
     
@@ -287,8 +242,18 @@ p <- ggplot(data, aes(x = value, fill = group)) +
   )
 
 p
+ggsave(
+  filename = paste0(output, "Sills.pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
 
-index <- 1
+for (index in seq_along(range))
+{
 
 empirical_df <- do.call(
   rbind,
@@ -339,6 +304,15 @@ p <- ggplot() +
   )
 
 p
+ggsave(
+  filename = paste0(output, "Covariance_New", as.character(index), ".pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
 
 xx <- seq(
   0,
@@ -390,6 +364,15 @@ p <- ggplot() +
   )
 
 p
+ggsave(
+  filename = paste0(output, "Covariance_New_Fitted", as.character(index), ".pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
 
 empirical_df <- do.call(
   rbind,
@@ -418,6 +401,67 @@ p <- ggplot(empirical_df, aes(x = dist, y = gamma, group = group)) +
     axis.text.y = element_text(size = plot_size*4)
   )
 p
+ggsave(
+  filename = paste0(output, "Covariances_Eucl", as.character(index), ".pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
+}
+
+MSE_estimate <- data.frame(MSE = c(unlist(lapply(1:R, function(x)
+  unlist(lapply(covariances[[x]], function(y)
+    sum((y$gamma - exponential_covariance(c(sill, range[x]), y$dist))^2))))),
+  unlist(lapply(1:R, function(x)
+    sapply(1:K, function(y) sum((rep(sills_eucl[y,x],
+              length(covariances[[x]][[y]]$dist)) -
+     exponential_kernel(c(sill, range[x]), covariances[[x]][[y]]$dist))^2))))),
+  range = rep(rep(range, each = K), 2),
+  process = c(rep("Covariance funct.", K*R),
+              rep("Variance est.", K*R)))
+
+expr_labels <- expression(
+  paste("||", hat(C)(h) - C(h), "||"),
+  paste("||", hat(C)[eucl](h) - C(h), "||")
+)
+
+p <- ggplot(MSE_estimate, aes(x = factor(range), y = MSE, fill = process,
+                           color = process)) +
+  geom_boxplot(alpha = 0.5) +
+  scale_fill_manual(values = c(third, col5), labels = expr_labels) +
+  scale_color_manual(values = c(third, col5), guide = 'none') +
+  labs(x = "Range (km in network distance)", y = "MSE of the estimator", fill = "Framework") +
+  scale_x_discrete(labels = function(x) as.character(as.integer(as.numeric(x) / 1000))) +
+  guides(
+    fill = guide_legend(label = label_parsed)
+  ) +
+  ylim(0,quantile(MSE_estimate$MSE, 0.95, na.rm = T)) +
+  theme_minimal() +
+  theme(
+    legend.position    = "bottom",
+    legend.title       = element_blank(),
+    legend.text        = element_text(size = plot_size*3),
+    legend.spacing   = unit(plot_size * 0.5, "cm"),
+    axis.title.x       = element_text(size = plot_size*3),
+    axis.title.y       = element_blank(),
+    axis.text.x        = element_text(size = plot_size*3),
+    axis.text.y        = element_text(size = plot_size*3),
+    legend.key.width  = unit(plot_size*0.1, "cm"),
+    legend.key.height = unit(plot_size*0.1,   "cm")
+  )
+
+ggsave(
+  filename = paste0(output, "MSE_Estimate.pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
 
 frobenius <- data.frame(
   error = c(frobenius_norm, frobenius_norm_eucl),
@@ -452,6 +496,15 @@ p <- ggplot(frobenius, aes(x = factor(range), y = error, fill = process, color =
     
   )
 p
+ggsave(
+  filename = paste0(output, "Frobenius.pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
 
 kl <- data.frame(
   error = c(kl_divergence, kl_divergence_eucl),
@@ -486,6 +539,15 @@ p <- ggplot(kl, aes(x = factor(range), y = error, fill = process, color = proces
     
   )
 p
+ggsave(
+  filename = paste0(output, "KL.pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
 
 MSE_temp <- data.frame(
   error = c(sqrt(MSE), sqrt(MSE_eucl)),
@@ -518,4 +580,12 @@ p <- ggplot(MSE_temp, aes(x = factor(range), y = error, fill = process, color = 
     
   )
 p
-
+ggsave(
+  filename = paste0(output, "MSE.pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)

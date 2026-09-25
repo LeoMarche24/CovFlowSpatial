@@ -45,10 +45,10 @@ df$value <- df$temperature
 inx <- which(!is.na(df$east) & !is.na(df$north) & !is.na(df$value))
 B <- length(inx)
 results <- compute_matrices(df = df)
-lines <- results[[1]]
-dist <- results[[2]]
-PI <- results[[3]]
-inx <- results[[4]]
+dist <- results[[1]]
+PI <- results[[2]]
+inx <- results[[3]]
+lines <- build_network_lines(df, dist)
 
 PI <- PI[inx, inx]
 dist <- dist[inx, inx]
@@ -267,10 +267,10 @@ ggsave(
 )
 
 results <- compute_matrices(df = df)
-lines <- results[[1]]
-dist <- results[[2]]
-PI <- results[[3]]
-inx <- results[[4]]
+dist <- results[[1]]
+PI <- results[[2]]
+inx <- results[[3]]
+lines <- build_network_lines(df, dist)
 
 B <- length(inx)
 PI <- PI[inx, inx]

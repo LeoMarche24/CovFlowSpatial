@@ -12,7 +12,6 @@ library(tidyverse)
 library(plotly)
 library(reshape2)
 library(geosphere)
-library(ggmap)
 
 ## Functions ##
 
@@ -32,19 +31,16 @@ plot_size <- 7
 
 #### Data loading ####
 
-domain <- "Temp"
+domain <- "Sardinia"
 load(paste0("Data/Covariance_Data_45_", domain, ".RData"))
 load(paste0("Data/Projections_", domain, ".RData"))
 data_real <- df
-
-register_stadiamaps("424ec34b-4e14-4acc-8aa9-9e8ab4f4fbc9", write = FALSE)
-load(paste0("Data/bbox_", domain, ".Rdata"))
-map <- get_stadiamap(bbox, zoom = 8, maptype = "alidade_smooth")
 
 #### Hot spot identification ####
 
 year <- 2050
 rcp <- 'rcp45'
+output <- paste0("Plots/Projections/")
 
 df <- data[which(data$year==year & data$RCP == rcp), ]
 
@@ -54,26 +50,10 @@ ggplot(df[which(!is.na(df$east) & !is.na(df$north) & !is.na(df$value)) ,],
   scale_fill_gradient(low = col2, high = col1)+
   theme_minimal()
 
-ggmap(map, darken = c(.356,"white")) +
-  geom_tile(data = df[which(!is.na(df$east) & !is.na(df$north) & !is.na(df$value)) ,], 
-            mapping = aes(x = lon, y = lat, fill=value), alpha = 0.8) +
-  geom_segment(data = df[which(!is.na(df$value)) ,], 
-               aes(x = lon, y = lat, xend = lon + east, yend = lat + north),
-               arrow = arrow(length = unit(0.3, "cm")), color = fourth, alpha=0.8, 
-               linewidth = 2) +
-  labs(x = "Longitude", y = "Latitude") +
-  scale_fill_gradient(low = col1, high = col2, name = "Temperature") + 
-  theme_minimal() +
-  theme(
-    legend.position = 'none',
-    axis.text = element_text(size = plot_size*3),
-    axis.title = element_text(size = plot_size*3)
-  )
-
 results <- compute_matrices(df = df)
-dist <- results[[2]]
-PI <- results[[3]]
-inx <- results[[4]]
+dist <- results[[1]]
+PI <- results[[2]]
+inx <- results[[3]]
 PI <- PI[inx, inx]
 dist <- dist[inx, inx]
 P <- PI
@@ -93,13 +73,17 @@ U <- evaluate_U(PI)
 
 # Create a contour plot #
 
-cov <- build_covariance_exponential(1, 1e20, dist, P, U)
-
 distances_eucl <- as.matrix(dist(df[inx, c("longitude", "latitude")], method = 'euclidean'))
-cov_eucl <- linear_covariance(c(1, max(distances_eucl)/1.5), distances_eucl)
+cov_eucl <- exponential_covariance(c(1, max(distances_eucl)*10), distances_eucl)
+load(paste0("Data/range_heatmap_", domain, ".RData"))
 
-points_high <- 40
-points_high_inx <- which(inx %in% points_high)
+cov <- build_covariance_exponential(1, range, dist, P, U)
+if (domain == "Sardinia") {
+  points_high <- c(1800, 1521)
+} else {
+  points_high <- c(1,30)
+}
+points_high_inx <- sapply(points_high, FUN = function(x) which(inx == x))
 
 df$covariances <- NA
 df$covariances[inx] <- 0
@@ -116,57 +100,6 @@ if(length(points_high_inx) > 1) {
 } else {
   df$covariances_euclidean2[inx] <- 0 
 }
-
-p <- ggmap(map, darken = c(.356,"white")) +
-  geom_tile(data = df[inx ,], 
-            mapping = aes(x = lon, y = lat, fill=covariances)) +
-  geom_segment(data = df[inx ,], 
-               aes(x = lon, y = lat, xend = lon + east, yend = lat + north),
-               arrow = arrow(length = unit(0.3, "cm")), color = fourth, alpha=0.4, 
-               linewidth = 2) +
-  geom_point(data = df[points_high, ], aes(x = lon, y = lat), color = "black", 
-             size = plot_size*0.7) +
-  labs(x = "Longitude", y = "Latitude") +
-  scale_fill_gradient(low = grey, high = third) + 
-  theme_minimal() +
-  theme(
-    legend.position = 'none'
-  )
-p
-
-p <- ggmap(map, darken = c(.356,"white")) +
-  geom_tile(data = df[inx ,], 
-            mapping = aes(x = lon, y = lat, fill=covariances_euclidean1)) +
-  geom_segment(data = df[inx ,], 
-               aes(x = lon, y = lat, xend = lon + east, yend = lat + north),
-               arrow = arrow(length = unit(0.3, "cm")), color = fourth, alpha=0.4, 
-               linewidth = 2) +
-  geom_point(data = df[points_high, ], aes(x = lon, y = lat), color = "black", 
-             size = plot_size*0.7) +
-  labs(x = "Longitude", y = "Latitude") +
-  scale_fill_gradient(low = grey, high = third) + 
-  theme_minimal() +
-  theme(
-    legend.position = 'none'
-  )
-p
-
-p <- ggmap(map, darken = c(.356,"white")) +
-  geom_tile(data = df[inx ,], 
-            mapping = aes(x = lon, y = lat, fill=covariances_euclidean2)) +
-  geom_segment(data = df[inx ,], 
-               aes(x = lon, y = lat, xend = lon + east, yend = lat + north),
-               arrow = arrow(length = unit(0.3, "cm")), color = fourth, alpha=0.4, 
-               linewidth = 2) +
-  geom_point(data = df[points_high, ], aes(x = lon, y = lat), color = "black", 
-             size = plot_size*0.7) +
-  labs(x = "Longitude", y = "Latitude") +
-  scale_fill_gradient(low = grey, high = third) + 
-  theme_minimal() +
-  theme(
-    legend.position = 'none'
-  )
-p
 
 cov <- build_covariance_exponential(sill45, range45, dist, P, U)
 
@@ -227,7 +160,7 @@ coordinates_index <- which.min(apply((coords_data -
                                         matrix(as.numeric(rep(coords, times = n)), nrow = n, byrow = TRUE))^2, 
                                      MARGIN = 1, sum))
 
-radius <- c(0, 10, 15, 20, 25, 30)*1e3
+radius <- c(0, 10, 15, 20, 30, 50)*1e3
 
 distances <- as.matrix(dist(df[inx, c("longitude", "latitude")]))
 
@@ -310,11 +243,23 @@ p <- ggplot() +
   ) +
   theme_minimal()
 p
+ggsave(
+  filename = paste0(output, "Exceedance_Probabilities_", as.character(year),
+                    "_", as.character(rcp), ".pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
 
 #### Euclidean framework ####
 
-cov <- exponential_covariance(c(sill45_eucl, range45_eucl),
-                              dist(df[inx,c("longitude", "latitude")], method = 'euclidean'))
+distances_eucl <- as.matrix(dist(df[inx,c("longitude", "latitude")], method = 'euclidean'))
+cov <- exponential_covariance(c(sill45_eucl, range45_eucl), distances_eucl)
+
+cov_chol <- chol(cov)
 
 simulation <- NULL
 K <- 500
@@ -369,7 +314,7 @@ coordinates_index <- which.min(apply((coords_data -
                                         matrix(as.numeric(rep(coords, times = n)), nrow = n, byrow = TRUE))^2, 
                                      MARGIN = 1, sum))
 
-radius <- c(0, 10, 15, 20, 25, 30)*1e3
+radius <- c(0, 10, 15, 20, 30, 50)*1e3
 
 find_prob <- function(t_val, r, simulation)
 {
@@ -451,6 +396,16 @@ p <- ggplot() +
   ) +
   theme_minimal()
 p
+ggsave(
+  filename = paste0(output, "Exceedance_Probabilities_", as.character(year),
+                    "_", as.character(rcp), "_Eucl.pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
 
 save(file = paste0("Data/data_projection_", domain, "_", year, ".RData"), df)
 

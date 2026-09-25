@@ -70,16 +70,25 @@ mariah_kernel <- function(params, h)
 ## Kriging functions #
 ####
 
+max_path_length <- function(paths)
+{
+  lengths <- unlist(lapply(paths, function(x) unlist(lapply(x$lengths,
+    function(y) if (is.null(y) || length(y) == 0) numeric(0) else y[,1]))))
+  lengths <- lengths[is.finite(lengths)]
+  if (!length(lengths))
+    stop("No finite path lengths are available.")
+  max(lengths)
+}
+
 evaluate_covariance_penalization <- function(ma, paths, l, U,
                                              cutoff = NULL, return_fuv = F)
 {
   if (is.null(cutoff))
   {
-    cutoff <- max(unlist(lapply(paths, function(x) max(unlist(lapply(x$lengths,
-                                                                     function(y) max(y[,1])))))))
+    cutoff <- max_path_length(paths)
   }
   B <- length(paths)
-  lags <- seq(0, ifelse(is.null(cutoff), maxs, cutoff), length = l)
+  lags <- seq(0, cutoff, length = l)
   vars <- rep(0, (B*(B-1))/2)
   omega <- matrix(0, nrow = (B*(B-1))/2, ncol = l)
   dists <- vector("list", l)
@@ -173,11 +182,10 @@ evaluate_covariance_penalization_train <- function(ma, paths, train, l, U,
 {
   if (is.null(cutoff))
   {
-    cutoff <- max(unlist(lapply(paths, function(x) max(unlist(lapply(x$lengths,
-               function(y) max(y[,1])))))))
+    cutoff <- max_path_length(paths)
   }
   B <- length(train)
-  lags <- seq(0, ifelse(is.null(cutoff), maxs, cutoff), length = l)
+  lags <- seq(0, cutoff, length = l)
   vars <- rep(0, (B*(B-1))/2)
   omega <- matrix(0, nrow = (B*(B-1))/2, ncol = l)
   dists <- vector("list", l)
@@ -274,8 +282,7 @@ evaluate_covariance_penalization_train_correctsill <- function(ma, paths, train,
 {
   if (is.null(cutoff))
   {
-    cutoff <- max(unlist(lapply(paths, function(x) max(unlist(lapply(x$lengths,
-      function(y) max(y[,1])))))))
+    cutoff <- max_path_length(paths)
   }
   B <- length(train)
   lags <- seq(0, cutoff, length = l)

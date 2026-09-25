@@ -31,7 +31,7 @@ ggplot(df_temp[which(!is.na(df_temp$east) & !is.na(df_temp$north) & !is.na(df_te
 data <- read.csv("Data/Pre_Processing/Projections_August.csv")
 data <- data[which(data$lat>38 & data$lon<12 & data$lat<44 & data$lon>7) ,]
 
-## Load in the data for high performance computing platform ##
+## Project coordinates and save the processed data ##
 
 coords <- df[,1:2]
 coordinates(coords) <- c("lon", "lat")
@@ -46,8 +46,6 @@ coords <- spTransform(coords, CRS("EPSG:3035"))
 data$longitude <- coords@coords[,1]
 data$latitude <- coords@coords[,2]
 
-save(data, file = paste0("HPC/Export/input_data/Projections_", domain, ".RData"))
-save(df, file = paste("HPC/Export/input_data/Data_", domain, ".RData", sep = ""))
 save(data, file = paste0("Data/Projections_", domain, ".RData"))
 save(df, file = paste0("Data/Data_", domain, ".RData"))
 save(bbox, file = paste0("Data/bbox_", domain, ".RData"))
@@ -78,7 +76,7 @@ ggplot(df_temp[which(!is.na(df_temp$east) & !is.na(df_temp$north) & !is.na(df_te
 data <- read.csv("Data/Pre_Processing/Projections_August.csv")
 data <- data[which(data$lat>42 & data$lon<9 & data$lat<44 & data$lon>7) ,]
 
-## Load in the data for high performance computing platform ##
+## Project coordinates and save the processed data ##
 
 coords <- df[,1:2]
 coordinates(coords) <- c("lon", "lat")
@@ -93,8 +91,6 @@ coords <- spTransform(coords, CRS("EPSG:3035"))
 data$longitude <- coords@coords[,1]
 data$latitude <- coords@coords[,2]
 
-save(data, file = paste0("HPC/Export/input_data/Projections_", domain, ".RData"))
-save(df, file = paste("HPC/Export/input_data/Data_", domain, ".RData", sep = ""))
 save(data, file = paste0("Data/Projections_", domain, ".RData"))
 save(df, file = paste0("Data/Data_", domain, ".RData"))
 save(bbox, file = paste0("Data/bbox_", domain, ".RData"))

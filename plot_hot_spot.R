@@ -25,9 +25,10 @@ load(paste0("Data/bbox_", domain, ".Rdata"))
 map <- get_stadiamap(bbox, zoom = 8, maptype = "alidade_smooth")
 
 rcp <- 'rcp45'
-plot_size <- 7
+plot_size <- 25
 
 load(paste0("Data/data_projection_", domain, "_2050.RData"))
+output <- paste0("Plots/Projections/")
 
 lat_max <- max(df$lat)
 lat_min <- min(df$lat)
@@ -62,6 +63,15 @@ p <- ggmap(map, darken = c(.356,"white")) +
     axis.title = element_text(size = plot_size*5)
   )
 p
+ggsave(
+  filename = paste0(output, "Contour_New.pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size * aspect_ratio,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
 
 p <- ggmap(map, darken = c(.356,"white")) +
   geom_tile(data = df[inx ,], 
@@ -80,78 +90,134 @@ p <- ggmap(map, darken = c(.356,"white")) +
     axis.title = element_text(size = plot_size*5)
   )
 p
+ggsave(
+  filename = paste0(output, "Contour_Eucl1.pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size * aspect_ratio,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
 
-index <- 25
-
-col_name <- paste0("exceedance_", index)
-df_temp <- df[,1:4]
-df_temp$hot_plot <- df[[col_name]]
-df_temp$hot_plot <- factor(df_temp$hot_plot, levels = c(1, 2, 3))
-
-p <- ggmap(map, darken = c(.356, "white")) +
-  geom_tile(data = df_temp[inx,],
-            mapping = aes(x = lon, y = lat, fill=hot_plot), alpha = 0.7) +
-  geom_segment(data = df_temp[inx,],
+p <- ggmap(map, darken = c(.356,"white")) +
+  geom_tile(data = df[inx ,],
+            mapping = aes(x = lon, y = lat, fill=covariances_euclidean2)) +
+  geom_segment(data = df[inx,],
                aes(x = lon, y = lat, xend = lon + east, yend = lat + north),
-               arrow = arrow(length = unit(0.1, "cm")), color = fourth, alpha=0.8,
+               arrow = arrow(length = unit(0.3, "cm")), color = fourth, alpha=0.4,
                linewidth = 2) +
-  scale_fill_manual(
-    values = c(
-      "1" = grey,    # color for hot_plot == 1
-      "2" = third,   # color for hot_plot == 2
-      "3" = col2
-    )) +
-  labs(
-    x = "Longitude",          # Change X-axis label
-    y = "Latitude",           # Change Y-axis label
-    fill = NULL
-  )+
+  geom_point(data = df[points[1], ], aes(x = lon, y = lat), color = "black", size = plot_size*0.5) +
+  labs(x = "Longitude", y = "Latitude") +
+  scale_fill_gradient(low = grey, high = third, name = "Temperature") +
   theme_minimal() +
   theme(
     legend.position = 'none',
-    axis.title.x = element_text(size = plot_size*5), # Change X-axis label font size
-    axis.title.y = element_text(size = plot_size*5), # Change Y-axis label font size
-    strip.text = element_text(size = plot_size*5),
-    axis.text.x = element_text(size = plot_size*5),
-    axis.text.y = element_text(size = plot_size*5)
+    axis.text = element_text(size = plot_size*5),
+    axis.title = element_text(size = plot_size*5)
   )
-
 p
+ggsave(
+  filename = paste0(output, "Contour_Eucl2.pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size * aspect_ratio,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
 
+threshold <- 25:30
 
-col_name <- paste0("exceedance_", index, "_Eucl")
-df_temp <- df[,1:4]
-df_temp$hot_plot <- df[[col_name]]
-df_temp$hot_plot <- factor(df_temp$hot_plot, levels = c(1, 2, 3))
+for(index in threshold)
+{
+  col_name <- paste0("exceedance_", index)
+  df_temp <- df[,1:4]
+  df_temp$hot_plot <- df[[col_name]]
+  df_temp$hot_plot <- factor(df_temp$hot_plot, levels = c(1, 2, 3))
 
-p <- ggmap(map, darken = c(.356, "white")) +
-  geom_tile(data = df_temp[inx,],
-            mapping = aes(x = lon, y = lat, fill=hot_plot), alpha = 0.7) +
-  geom_segment(data = df_temp[inx,],
-               aes(x = lon, y = lat, xend = lon + east, yend = lat + north),
-               arrow = arrow(length = unit(0.1, "cm")), color = fourth, alpha=0.8,
-               linewidth = 2) +
-  scale_fill_manual(
-    values = c(
-      "1" = grey,    # color for hot_plot == 1
-      "2" = third,   # color for hot_plot == 2
-      "3" = col2
-    )) +
-  labs(
-    x = "Longitude",          # Change X-axis label
-    y = "Latitude",           # Change Y-axis label
-    fill = NULL
-  )+
-  theme_minimal() +
-  theme(
-    legend.position = 'none',
-    axis.title.x = element_text(size = plot_size*5), # Change X-axis label font size
-    axis.title.y = element_text(size = plot_size*5), # Change Y-axis label font size
-    strip.text = element_text(size = plot_size*5),
-    axis.text.x = element_text(size = plot_size*5),
-    axis.text.y = element_text(size = plot_size*5)
+  p <- ggmap(map, darken = c(.356, "white")) +
+    geom_tile(data = df_temp[inx,],
+              mapping = aes(x = lon, y = lat, fill=hot_plot), alpha = 0.7) +
+    geom_segment(data = df_temp[inx,],
+                 aes(x = lon, y = lat, xend = lon + east, yend = lat + north),
+                 arrow = arrow(length = unit(0.1, "cm")), color = fourth, alpha=0.8,
+                 linewidth = 2) +
+    scale_fill_manual(
+      values = c(
+        "1" = grey,    # color for hot_plot == 1
+        "2" = third,   # color for hot_plot == 2
+        "3" = col2
+      )) +
+    labs(
+      x = "Longitude",          # Change X-axis label
+      y = "Latitude",           # Change Y-axis label
+      fill = NULL
+    )+
+    theme_minimal() +
+    theme(
+      legend.position = 'none',
+      axis.title.x = element_text(size = plot_size*5), # Change X-axis label font size
+      axis.title.y = element_text(size = plot_size*5), # Change Y-axis label font size
+      strip.text = element_text(size = plot_size*5),
+      axis.text.x = element_text(size = plot_size*5),
+      axis.text.y = element_text(size = plot_size*5)
+    )
+
+  ggsave(
+    filename = paste0(output, "Hot_spots_VF_", index, ".pdf"),
+    plot     = p,
+    width    = plot_size,
+    height   = plot_size * aspect_ratio,
+    units    = "in",
+    dpi      = 92,
+    limitsize = FALSE
   )
+}
 
+for(index in threshold)
+{
+  col_name <- paste0("exceedance_", index, "_Eucl")
+  df_temp <- df[,1:4]
+  df_temp$hot_plot <- df[[col_name]]
+  df_temp$hot_plot <- factor(df_temp$hot_plot, levels = c(1, 2, 3))
 
-p
+  p <- ggmap(map, darken = c(.356, "white")) +
+    geom_tile(data = df_temp[inx,],
+              mapping = aes(x = lon, y = lat, fill=hot_plot), alpha = 0.7) +
+    geom_segment(data = df_temp[inx,],
+                 aes(x = lon, y = lat, xend = lon + east, yend = lat + north),
+                 arrow = arrow(length = unit(0.1, "cm")), color = fourth, alpha=0.8,
+                 linewidth = 2) +
+    scale_fill_manual(
+      values = c(
+        "1" = grey,    # color for hot_plot == 1
+        "2" = third,   # color for hot_plot == 2
+        "3" = col2
+      )) +
+    labs(
+      x = "Longitude",          # Change X-axis label
+      y = "Latitude",           # Change Y-axis label
+      fill = NULL
+    )+
+    theme_minimal() +
+    theme(
+      legend.position = 'none',
+      axis.title.x = element_text(size = plot_size*5), # Change X-axis label font size
+      axis.title.y = element_text(size = plot_size*5), # Change Y-axis label font size
+      strip.text = element_text(size = plot_size*5),
+      axis.text.x = element_text(size = plot_size*5),
+      axis.text.y = element_text(size = plot_size*5)
+    )
+
+  ggsave(
+    filename = paste0(output, "Hot_spots_VF_", index, "_Eucl.pdf"),
+    plot     = p,
+    width    = plot_size,
+    height   = plot_size * aspect_ratio,
+    units    = "in",
+    dpi      = 92,
+    limitsize = FALSE
+  )
+}
 
