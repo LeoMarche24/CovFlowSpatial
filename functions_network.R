@@ -21,28 +21,19 @@ generate_line_id <- function(coords)
 # The following function works if the grid is regular - COPERNICUS data
 compute_matrices <- function(df)
 {
+  coord_sub <- data.frame(longitude = df$longitude, latitude = df$latitude)
   nor <- df$north
   eas <- df$east
   nor[is.na(nor)] <- 0
   eas[is.na(eas)] <- 0
   valid <- which(!is.na(nor) & !is.na(eas) & !is.na(df$value) & ((abs(nor)>0) | (abs(eas)>0)))
-  coord_sub <- data.frame(longitude = df$longitude, latitude = df$latitude)
   dist_eucl <- as.matrix(dist(as.matrix(coord_sub), method = 'euclidean'))
-  coord_sub <- data.frame(longitude = df$lon, latitude = df$lat)
   B <- dim(df)[1]
   dist_mat <- matrix(NA, B,B)
-  mat <- matrix(F, nrow=B, ncol=B)
   PI <- matrix(NA, B, B)
-  lines <- list()
   
-  lines <- list()
-  for (i in 1:B) {
-    line_id <- generate_line_id(coord_sub[i, ])
-    lines[[i]] <- sp::Lines(slinelist = list(), ID = line_id)
-  }
-  
-  extremes <- c(max(df$lon, na.rm = TRUE), min(df$lon, na.rm = TRUE),
-                max(df$lat, na.rm = TRUE), min(df$lat, na.rm = TRUE))
+  lon_extremes <- range(df$lon, na.rm = TRUE)
+  lat_extremes <- range(df$lat, na.rm = TRUE)
   
   for (i in 1:B)
   {
@@ -55,22 +46,20 @@ compute_matrices <- function(df)
     angle <- atan2(vel[1], vel[2])
     lon0 <- df$lon[i]
     lat0 <- df$lat[i]
-    temp <- list()
-    line <- NULL
-    line2 <- NULL
-    
-    aux <- (lon0 %in% extremes) + (lat0 %in% extremes)
+    on_lon_boundary <- lon0 %in% lon_extremes
+    on_lat_boundary <- lat0 %in% lat_extremes
+    boundary_count <- on_lon_boundary + on_lat_boundary
     # I take the nearest and remove that at 0 distance (the point itself)
     
-    if(aux == 0)
+    if(boundary_count == 0)
     {
       nearest <- order(dist_eucl[i,])[2:9]
     }
-    else if(aux == 1)
+    else if(boundary_count == 1)
     {
       nearest <- order(dist_eucl[i,])[2:6]
     }
-    else if(aux == 2)
+    else if(boundary_count == 2)
     {
       nearest <- order(dist_eucl[i,])[2:4]
     }
@@ -119,22 +108,12 @@ compute_matrices <- function(df)
       {
         dist_mat[i, directions[2]] <- dist_eucl[i, directions[2]]
         PI[i, directions[2]] <- abs(vel[2])/sqrt(sum(vel^2))
-        line <- sp::Line(rbind(coord_sub[i,], coord_sub[directions[2] ,]))
       }
       if(!is_east & mask_sq[1] & (directions[2] %in% valid))
       {
         dist_mat[i, directions[2]] <- dist_eucl[i, directions[2]]
         PI[i, directions[2]] <- abs(vel[1])/sqrt(sum(vel^2))
-        line2 <- sp::Line(rbind(coord_sub[i,], coord_sub[directions[2] ,]))
       }
-      id <- paste(coord_sub[i,1], coord_sub[i,2])
-      inx <- which(sapply(lines, function(line) attr(line, "ID") == id))
-      temp <- list(line, line2)
-      if (!is.null(temp[[1]]) || !is.null(temp[[2]]))
-      {
-        lines[[inx]] <- sp::Lines(temp[!sapply(temp, is.null)], ID = id)
-      }
-      
       next
     }
     
@@ -144,20 +123,11 @@ compute_matrices <- function(df)
     {
       dist_mat[i, directions[1,2]] <- dist_eucl[i, directions[1,2]]
       PI[i, directions[1,2]] <- ab[1]/sqrt(sum(ab^2))
-      line <- sp::Line(rbind(coord_sub[i,], coord_sub[directions[1,2] ,]))
     }
     if(ab[2]>0 & mask_sq[2] & (directions[2,2] %in% valid))
     {
       dist_mat[i, directions[2,2]] <- dist_eucl[i, directions[2,2]]
       PI[i, directions[2,2]] <- ab[2]/sqrt(sum(ab^2))
-      line2 <- sp::Line(rbind(coord_sub[i,], coord_sub[directions[2,2] ,]))
-    }
-    id <- paste(coord_sub[i,1], coord_sub[i,2])
-    inx <- which(sapply(lines, function(line) attr(line, "ID") == id))
-    temp <- list(line, line2)
-    if (!is.null(temp[[1]]) || !is.null(temp[[2]]))
-    {
-      lines[[inx]] <- sp::Lines(temp[!sapply(temp, is.null)], ID = id)
     }
   }
   
@@ -169,7 +139,24 @@ compute_matrices <- function(df)
   valid <- setdiff(1:B, singletons)
   PI <- t(apply(PI, MARGIN =  1, normalize_column))
   
-  return(list(lines, dist_mat, PI, valid))
+  return(list(dist_mat, PI, valid))
+}
+
+build_network_lines <- function(df, dist_mat)
+{
+  coord_sub <- data.frame(longitude = df$lon, latitude = df$lat)
+  lines <- vector("list", nrow(coord_sub))
+
+  for (i in seq_len(nrow(coord_sub)))
+  {
+    destinations <- which(!is.na(dist_mat[i, ]))
+    segments <- lapply(destinations, function(j) {
+      sp::Line(rbind(coord_sub[i, ], coord_sub[j, ]))
+    })
+    lines[[i]] <- sp::Lines(segments, ID = generate_line_id(coord_sub[i, , drop = FALSE]))
+  }
+
+  lines
 }
 
 #############################
@@ -288,16 +275,18 @@ initialize <- function(dist, prob)
 update <- function(p, dist, prob) 
 {
   list_update <- NULL
-  if (length(nrow(p$update)))
+  updated_flag <- FALSE
+
+  if (!is.null(p$update) && nrow(p$update) > 0)
   {
-    for (row in 1:nrow(p$update))
+    for (row in seq_len(nrow(p$update)))
     {
       i <- p$update[row, 1]
       j <- p$update[row, 2]
       inx <- which(!is.na(dist[, i]))
-      if (length(inx))
+      if (length(inx) > 0)
       {
-        for (k in 1:length(inx))
+        for (k in seq_along(inx))
         {
           new_dist <- dist[inx[k],i]+p$lengths[[i]][j, 1]
           step <- prob[inx[k],i]
@@ -305,7 +294,7 @@ update <- function(p, dist, prob)
             new_PI <- 0
           else
             new_PI <- p$lengths[[i]][j, 2]*step
-          if (new_PI > 1e-3 & !(inx[k] %in% p$visited[[i]][[j]]))
+          if (new_PI > 1e-5 && !(inx[k] %in% p$visited[[i]][[j]]))
           {
             p$lengths[[inx[k]]] <- rbind(p$lengths[[inx[k]]], 
                                          c(new_dist, new_PI))
@@ -314,19 +303,96 @@ update <- function(p, dist, prob)
               l <- 0
             p$visited[[inx[k]]][[l+1]] <- c(p$visited[[i]][[j]], inx[k])
             list_update <- rbind(list_update, cbind(inx[k], nrow(p$lengths[[inx[k]]])))
+            updated_flag <- TRUE
           }
         }
-        updated <<- TRUE
       }
     }
-    p$update <- list_update
+
+    if (!is.null(list_update))
+      list_update <- unique(list_update)
+
+    if (is.null(list_update) || nrow(list_update) == 0)
+      p$update <- NULL
+    else
+    {
+      p$update <- list_update
+      updated_flag <- TRUE
+    }
   }
-  return(p)
+
+  return(list(p = p, updated = updated_flag))
+}
+
+get_n_cores <- function()
+{
+  requested <- suppressWarnings(as.integer(Sys.getenv("COVFLOW_N_CORES")))
+  if (is.na(requested) || requested < 1)
+    requested <- NA_integer_
+
+  nodefile <- Sys.getenv("PBS_NODEFILE")
+  allocated <- NA_integer_
+  if (nzchar(nodefile) && file.exists(nodefile))
+  {
+    allocated <- sum(nzchar(readLines(nodefile, warn = FALSE)))
+    if (allocated < 1)
+      allocated <- NA_integer_
+  }
+
+  if (is.na(allocated))
+    allocated <- suppressWarnings(as.integer(Sys.getenv("PBS_NP")))
+  if (is.na(allocated) || allocated < 1)
+    allocated <- suppressWarnings(as.integer(Sys.getenv("NCPUS")))
+  if (is.na(allocated) || allocated < 1)
+    allocated <- NA_integer_
+
+  if (!is.na(requested) && !is.na(allocated))
+    return(min(requested, allocated))
+  if (!is.na(requested))
+    return(requested)
+  if (!is.na(allocated))
+    return(allocated)
+  1L
+}
+
+compose_distances <- function(dist, prob, n_cores = get_n_cores())
+{
+  distances <- initialize(dist, prob)
+  n_cores <- max(1L, min(as.integer(n_cores), length(distances)))
+
+  if (n_cores == 1L)
+  {
+    repeat
+    {
+      results <- lapply(distances, update, dist = dist, prob = prob)
+      distances <- lapply(results, `[[`, "p")
+      if (!any(vapply(results, `[[`, logical(1), "updated")))
+        break
+    }
+    return(distances)
+  }
+
+  cl <- parallel::makeCluster(n_cores)
+  on.exit(parallel::stopCluster(cl), add = TRUE)
+  parallel::clusterExport(cl, c("dist", "prob", "update"), envir = environment())
+
+  repeat
+  {
+    results <- parallel::parLapply(
+      cl, distances,
+      function(p, dist, prob) update(p, dist, prob),
+      dist = dist, prob = prob
+    )
+    distances <- lapply(results, `[[`, "p")
+    if (!any(vapply(results, `[[`, logical(1), "updated")))
+      break
+  }
+
+  distances
 }
 
 compute_probs <- function(G, i, j, PI_aux)
 {
-  not_self <- 1/diag(G)
   G_AA <- G[c(i,j), c(i,j)]
   b <- solve(G_AA)%*%c(1,1)
   G_xa <- G[-c(i,j), c(i,j)]
@@ -345,8 +411,8 @@ evaluate_U <- function(PI)
   PI_aux <- cbind(PI_aux, 1 - rowSums(PI_aux))
   PI_aux <- rbind(PI_aux, c(rep(0, nrow(PI_aux)), 1))
   B <- nrow(PI_aux)
-  G <- graph_from_adjacency_matrix(PI_aux > 0, mode = "directed")
-  scc <- components(G, mode = "strong")
+  G <- igraph::graph_from_adjacency_matrix(PI_aux > 0, mode = "directed")
+  scc <- igraph::components(G, mode = "strong")
   recurrent <- c()
   for (comp_id in unique(scc$membership)) {
     states <- which(scc$membership == comp_id)
@@ -371,9 +437,23 @@ evaluate_U <- function(PI)
   not_self <- 1/diag(G)
   
   pair_inx <- which(upper.tri(matrix(0, B, B)), arr.ind = TRUE)
-  res_list <- lapply(seq_len(nrow(pair_inx)), function(k) {
-    compute_probs(G, pair_inx[k, 1], pair_inx[k, 2], PI_aux)
-  })
+  n_cores <- get_n_cores()
+  if (n_cores > 1)
+  {
+    cl <- parallel::makeCluster(min(n_cores, nrow(pair_inx)))
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+    parallel::clusterExport(cl, c("pair_inx", "G", "PI_aux", "compute_probs"),
+                            envir = environment())
+    res_list <- parallel::parLapply(cl, seq_len(nrow(pair_inx)), function(k) {
+      compute_probs(G, pair_inx[k, 1], pair_inx[k, 2], PI_aux)
+    })
+  }
+  else
+  {
+    res_list <- lapply(seq_len(nrow(pair_inx)), function(k) {
+      compute_probs(G, pair_inx[k, 1], pair_inx[k, 2], PI_aux)
+    })
+  }
   
   G_aux <- matrix(0, nrow = B, ncol = B)
   for (r in res_list) {

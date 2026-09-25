@@ -24,31 +24,46 @@ mariah_covariance <- function(params, h)
 {
   sill <- params[1]
   range <- params[2]
-  return(sill * ((log(h/range + 1))/(h/range)))
+  scaled_distance <- h/range
+  correlation <- ifelse(scaled_distance == 0, 1,
+                        log1p(scaled_distance)/scaled_distance)
+  return(sill * correlation)
 }
 
 exponential_kernel <- function(params, h)
 {
-  range <- params[1]
-  return(exp(-h/range))
+  sill <- params[1]
+  range <- params[2]
+  return(sill * (1 - exp(-h/range)))
 }
 
 linear_kernel <- function(params, h)
 {
-  range <- params[1]
-  ifelse(h <= range, (1 - h / range), 0)
+  sill <- params[1]
+  range <- params[2]
+  sill * (1 - ifelse(h <= range, (1 - h / range), 0))
 }
 
 spherical_kernel <- function(params, h)
 {
-  range <- params[1]
-  ifelse(h <= range, (1 - (1.5 * (h / range)) + (0.5 * (h / range)^3)), 0)
+  sill <- params[1]
+  range <- params[2]
+  correlation <- ifelse(
+    h <= range,
+    1 - (1.5 * (h / range)) + (0.5 * (h / range)^3),
+    0
+  )
+  sill * (1 - correlation)
 }
 
 mariah_kernel <- function(params, h)
 {
-  range <- params[1]
-  return(((log(h/range + 1))/(h/range)))
+  sill <- params[1]
+  range <- params[2]
+  scaled_distance <- h/range
+  correlation <- ifelse(scaled_distance == 0, 1,
+                        log1p(scaled_distance)/scaled_distance)
+  return(sill * (1 - correlation))
 }
 
 ####
@@ -113,38 +128,25 @@ evaluate_covariance_penalization <- function(ma, paths, l, U,
   
   fuv <- mean(vars[which(!connected)])
   vars <- vars[connected==1]
-  omega <- omega[connected==1,]
+  omega <- omega[connected==1, , drop = FALSE]
   
   cols <- which(colSums(omega) == 0)
   
-  if (length(cols))
-  {
-    omega <- omega[,-cols]
-    aux <- t(omega)%*%omega
-    q <- t(omega)%*%(fuv - vars)
-    nor <- max(abs(q))/fuv
-    mins <- min(2*diag(abs(aux)) - rowSums(abs(aux)))
-    lambda <- nor - mins
-    covariance <- c(solve(aux +
-                            lambda*diag(1,l-length(cols)))%*%q,
-                    rep(0, length(cols)))
-  }
-  else
-  {
-    aux <- t(omega)%*%omega
-    q <- t(omega)%*%(fuv - vars)
-    nor <- max(abs(q))/fuv
-    mins <- min(2*diag(abs(aux)) - rowSums(abs(aux)))
-    lambda <- nor - mins
-    covariance <- c(solve(aux +
-                            lambda*diag(1,l-length(cols)))%*%q,
-                    rep(0, length(cols)))
-  }
+  active_cols <- setdiff(seq_len(l), cols)
+  omega <- omega[, active_cols, drop = FALSE]
+  aux <- t(omega)%*%omega
+  q <- t(omega)%*%(fuv - vars)
+  nor <- max(abs(q))/fuv
+  mins <- min(2*diag(abs(aux)) - rowSums(abs(aux)))
+  lambda <- max(0, nor - mins)
+  estimated <- solve(aux + lambda*diag(1, ncol(omega)))%*%q
+  covariance <- numeric(l)
+  covariance[active_cols] <- estimated
   
   covariance <- c(fuv, covariance)
   
   dists <- c(0, unlist(lapply(dists, mean, na.rm=T)))
-  weights <- np/dists
+  weights <- c(0, np/dists[-1])
   if (any(is.na(weights)) || any(is.na(covariance)))
   {
     covariance <- data.frame(dist = dists,
@@ -214,7 +216,7 @@ evaluate_covariance_penalization_train <- function(ma, paths, train, l, U,
         for (k in seq_along(interval_unique))
         {
           omega[index, interval_unique[k]] <- omega[index, interval_unique[k]] +
-            sum(mat[interval==interval_unique[k],2]) * (U[j,i] / sqrt(U[i,i]*U[j,j]))
+            sum(mat[interval==interval_unique[k],2]) * (U[i,j] / sqrt(U[i,i]*U[j,j]))
           np[interval_unique[k]] <- np[interval_unique[k]] + 1
           dists[[interval_unique[k]]] <- rbind(dists[[interval_unique[k]]], mean(mat[interval==interval_unique[k],1]))
         }
@@ -226,38 +228,25 @@ evaluate_covariance_penalization_train <- function(ma, paths, train, l, U,
   
   fuv <- mean(vars[which(rowSums(omega) == 0)])
   vars <- vars[connected==1]
-  omega <- omega[connected==1,]
+  omega <- omega[connected==1, , drop = FALSE]
   
   cols <- which(colSums(omega) == 0)
   
-  if (length(cols))
-  {
-    omega <- omega[,-cols]
-    aux <- t(omega)%*%omega
-    q <- t(omega)%*%(fuv - vars)
-    nor <- max(abs(q))/fuv
-    mins <- min(2*diag(abs(aux)) - rowSums(abs(aux)))
-    lambda <- nor - mins
-    covariance <- c(solve(aux +
-                            lambda*diag(1,l-length(cols)))%*%q,
-                    rep(0, length(cols)))
-  }
-  else
-  {
-    aux <- t(omega)%*%omega
-    q <- t(omega)%*%(fuv - vars)
-    nor <- max(abs(q))/fuv
-    mins <- min(2*diag(abs(aux)) - rowSums(abs(aux)))
-    lambda <- nor - mins
-    covariance <- c(solve(aux +
-                            lambda*diag(1,l-length(cols)))%*%q,
-                    rep(0, length(cols)))
-  }
+  active_cols <- setdiff(seq_len(l), cols)
+  omega <- omega[, active_cols, drop = FALSE]
+  aux <- t(omega)%*%omega
+  q <- t(omega)%*%(fuv - vars)
+  nor <- max(abs(q))/fuv
+  mins <- min(2*diag(abs(aux)) - rowSums(abs(aux)))
+  lambda <- max(0, nor - mins)
+  estimated <- solve(aux + lambda*diag(1, ncol(omega)))%*%q
+  covariance <- numeric(l)
+  covariance[active_cols] <- estimated
   
   covariance <- c(fuv, covariance)
   
   dists <- c(0, unlist(lapply(dists, mean, na.rm=T)))
-  weights <- np/dists
+  weights <- c(0, np/dists[-1])
   if (any(is.na(weights)) || any(is.na(covariance)))
   {
     covariance <- data.frame(dist = dists,
@@ -279,26 +268,97 @@ evaluate_covariance_penalization_train <- function(ma, paths, train, l, U,
     return(covariance)
 }
 
+evaluate_covariance_penalization_train_correctsill <- function(ma, paths, train,
+                                                               l, U, cutoff = NULL,
+                                                               sill)
+{
+  if (is.null(cutoff))
+  {
+    cutoff <- max(unlist(lapply(paths, function(x) max(unlist(lapply(x$lengths,
+      function(y) max(y[,1])))))))
+  }
+  B <- length(train)
+  lags <- seq(0, cutoff, length = l)
+  vars <- rep(0, (B*(B-1))/2)
+  omega <- matrix(0, nrow = (B*(B-1))/2, ncol = l)
+  dists <- vector("list", l)
+  np <- rep(0, l)
+  connected <- rep(0, (B*(B-1)/2))
+  index <- 1
+
+  for (in1 in 1:(B-1))
+  {
+    for (in2 in (in1+1):B)
+    {
+      i <- train[in1]
+      j <- train[in2]
+      vars[index] <- ((ma[i] - ma[j]) ^ 2)/2
+      a <- paths[[i]]$lengths[[j]]
+      b <- paths[[j]]$lengths[[i]]
+
+      if (!is.null(a))
+      {
+        interval <- findInterval(a[,1], lags)
+        for (k in unique(interval))
+        {
+          omega[index, k] <- omega[index, k] +
+            sum(a[interval == k, 2]) * (U[j,i] / sqrt(U[i,i]*U[j,j]))
+          np[k] <- np[k] + 1
+          dists[[k]] <- rbind(dists[[k]], mean(a[interval == k, 1]))
+        }
+        connected[index] <- 1
+      }
+
+      if (!is.null(b))
+      {
+        interval <- findInterval(b[,1], lags)
+        for (k in unique(interval))
+        {
+          omega[index, k] <- omega[index, k] +
+            sum(b[interval == k, 2]) * (U[i,j] / sqrt(U[i,i]*U[j,j]))
+          np[k] <- np[k] + 1
+          dists[[k]] <- rbind(dists[[k]], mean(b[interval == k, 1]))
+        }
+        connected[index] <- 1
+      }
+      index <- index + 1
+    }
+  }
+
+  vars <- vars[connected == 1]
+  omega <- omega[connected == 1, , drop = FALSE]
+  cols <- which(colSums(omega) == 0)
+
+  active_cols <- setdiff(seq_len(l), cols)
+  omega <- omega[, active_cols, drop = FALSE]
+
+  aux <- t(omega) %*% omega
+  q <- t(omega) %*% (sill - vars)
+  nor <- max(abs(q))/sill
+  mins <- min(2*diag(abs(aux)) - rowSums(abs(aux)))
+  lambda <- max(0, nor - mins)
+  estimated <- solve(aux + lambda*diag(1, ncol(omega))) %*% q
+  covariance_bins <- numeric(l)
+  covariance_bins[active_cols] <- estimated
+  covariance <- c(sill, covariance_bins)
+
+  dists <- c(0, unlist(lapply(dists, mean, na.rm = TRUE)))
+  weights <- c(0, np/dists[-1])
+  covariance <- data.frame(dist = dists, gamma = covariance, np = weights)
+  covariance <- covariance[complete.cases(covariance[, c("dist", "gamma")]), ]
+  covariance
+}
+
 ####
 # Simulation functions
 ####
 
-build_covariances <- function(sill, range, paths, U, fun)
+build_covariances <- function(sill, range, paths, paths2 = NULL, U, fun, mat = NULL)
 {
   B <- length(paths)
   covs1 <- matrix(0, B, B)
   for (i in 1:(B-1))
   {
-    if (!is.null(paths[[i]]$lengths[[i]]))
-    {
-      sums <- 0  
-      mat <- paths[[i]]$lengths[[i]]
-      l <- dim(mat)[1]
-      for (k in 1:l) { 
-        sums <- sums + mat[k,2]*fun(c(sill, range), mat[k,1])
-      }
-      covs1[i,i] <- sums
-    }
     for (j in (i+1):B)
     {
       sums_1 <- sums_2 <- 0
@@ -362,6 +422,14 @@ fit_covariance <- function(covariance, fun, initials)
   # Extract distances and empirical semivariances
   h <- covariance$dist
   c_empirical <- covariance$gamma
+  valid <- is.finite(h) & is.finite(c_empirical)
+  if ("np" %in% names(covariance))
+    valid <- valid & covariance$np > 0
+  h <- h[valid]
+  c_empirical <- c_empirical[valid]
+
+  if (!length(h))
+    stop("No non-empty distance bins are available for covariance fitting.")
   
   # Objective function to minimize (sum of squared errors)
   obj_fun <- function(params) {
@@ -382,6 +450,14 @@ fit_range <- function(empirical, fun, initial, param_s)
   # Extract distances and empirical semivariances
   h <- empirical$dist
   gamma_empirical <- empirical$gamma
+  valid <- is.finite(h) & is.finite(gamma_empirical)
+  if ("np" %in% names(empirical))
+    valid <- valid & empirical$np > 0
+  h <- h[valid]
+  gamma_empirical <- gamma_empirical[valid]
+
+  if (!length(h))
+    stop("No non-empty distance bins are available for range fitting.")
   
   # Objective function to minimize (sum of squared errors)
   obj_fun <- function(param) {
@@ -426,73 +502,87 @@ evaluate_test <- function(values, covs, train, test)
   return(data.frame(preds = t(predictions), vars = t(vars)))
 }
 
-calc_covariance <- function(coords, values, bins = 10) {
-  lat_mean <- mean(coords[,2])
-  km_per_deg_lon <- 111 * cos(lat_mean * pi / 180)
-  km_per_deg_lat <- 111
-  
-  coords_km <- coords
-  coords_km[,1] <- coords[,1] * km_per_deg_lon
-  coords_km[,2] <- coords[,2] * km_per_deg_lat
-  
-  dists <- as.matrix(dist(coords_km))
-  
-  # Center values
+calc_covariance <- function(coords, values, bins = 15) {
+  coords <- as.matrix(coords)
+  valid_observations <- complete.cases(coords) & is.finite(values)
+  coords <- coords[valid_observations, , drop = FALSE]
+  values <- values[valid_observations]
+
+  if (length(values) < 2)
+    stop("At least two complete observations are required.")
+
+  dists <- as.matrix(dist(coords))
+  upper <- upper.tri(dists)
+  pair_distances <- dists[upper]
   z <- values - mean(values)
-  cross_prods <- outer(z, z, "*")
-  
-  max_dist <- max(dists)
-  bin_breaks <- seq(0, max_dist, length.out = bins + 1)
-  cov_data <- data.frame(dist = numeric(bins),
-                         cov  = numeric(bins),
-                         np   = numeric(bins))
-  
-  for (i in 1:bins) {
-    indices <- which(dists >= bin_breaks[i] & dists < bin_breaks[i+1], arr.ind = TRUE)
-    if (nrow(indices) > 0) {
-      valid <- indices[indices[,1] < indices[,2], , drop = FALSE]
-      if (nrow(valid) > 0) {
-        cov_data$dist[i] <- (bin_breaks[i] + bin_breaks[i+1]) / 2
-        cov_data$gamma[i]  <- mean(cross_prods[valid])
-        cov_data$np[i]   <- nrow(valid)
-      }
+  pair_covariances <- outer(z, z, "*")[upper]
+  positive <- pair_distances > 0
+
+  if (!any(positive))
+    stop("At least two distinct spatial locations are required.")
+
+  pair_distances <- pair_distances[positive]
+  pair_covariances <- pair_covariances[positive]
+  bin_breaks <- seq(0, max(pair_distances), length.out = bins + 1)
+  bin_index <- findInterval(
+    pair_distances, bin_breaks, rightmost.closed = TRUE, all.inside = TRUE
+  )
+  cov_data <- data.frame(
+    dist = c(0, rep(NA_real_, bins)),
+    gamma = c(var(values), rep(NA_real_, bins)),
+    np = c(length(values), integer(bins))
+  )
+
+  for (i in seq_len(bins)) {
+    selected <- bin_index == i
+    if (any(selected)) {
+      cov_data$dist[i + 1] <- mean(pair_distances[selected])
+      cov_data$gamma[i + 1] <- mean(pair_covariances[selected])
+      cov_data$np[i + 1] <- sum(selected)
     }
   }
-  cov_data$gamma[1] <- var(values)
-  return(cov_data)
+
+  cov_data
 }
 
-calc_variogram <- function(coords, values, bins = 10) {
-  lat_mean <- mean(coords[,2])
-  km_per_deg_lon <- 111 * cos(lat_mean * pi / 180)
-  km_per_deg_lat <- 111
-  
-  coords_km <- coords
-  coords_km[,1] <- coords[,1] * km_per_deg_lon
-  coords_km[,2] <- coords[,2] * km_per_deg_lat
-  
-  dists <- as.matrix(dist(coords_km))
-  
-  # Center values
-  diffs <- outer(values, values, "-")
-  sq_diffs <- 0.5 * (diffs^2)
-  
-  max_dist <- max(dists)
-  bin_breaks <- seq(0, max_dist, length.out = bins + 1)
-  vario_data <- data.frame(dist = numeric(bins),
-                           gamma = numeric(bins),
-                           np    = numeric(bins))
-  
-  for (i in 1:bins) {
-    indices <- which(dists >= bin_breaks[i] & dists < bin_breaks[i+1], arr.ind = TRUE)
-    if (nrow(indices) > 0) {
-      valid <- indices[indices[,1] < indices[,2], , drop = FALSE]
-      if (nrow(valid) > 0) {
-        vario_data$dist[i] <- (bin_breaks[i] + bin_breaks[i+1]) / 2
-        vario_data$gamma[i] <- mean(sq_diffs[valid]) / 2
-        vario_data$np[i]   <- nrow(valid)
-      }
+calc_variogram <- function(coords, values, bins = 15) {
+  coords <- as.matrix(coords)
+  valid_observations <- complete.cases(coords) & is.finite(values)
+  coords <- coords[valid_observations, , drop = FALSE]
+  values <- values[valid_observations]
+
+  if (length(values) < 2)
+    stop("At least two complete observations are required.")
+
+  dists <- as.matrix(dist(coords))
+  upper <- upper.tri(dists)
+  pair_distances <- dists[upper]
+  pair_semivariances <- (0.5 * outer(values, values, "-")^2)[upper]
+  positive <- pair_distances > 0
+
+  if (!any(positive))
+    stop("At least two distinct spatial locations are required.")
+
+  pair_distances <- pair_distances[positive]
+  pair_semivariances <- pair_semivariances[positive]
+  bin_breaks <- seq(0, max(pair_distances), length.out = bins + 1)
+  bin_index <- findInterval(
+    pair_distances, bin_breaks, rightmost.closed = TRUE, all.inside = TRUE
+  )
+  vario_data <- data.frame(
+    dist = c(0, rep(NA_real_, bins)),
+    gamma = c(0, rep(NA_real_, bins)),
+    np = c(length(values), integer(bins))
+  )
+
+  for (i in seq_len(bins)) {
+    selected <- bin_index == i
+    if (any(selected)) {
+      vario_data$dist[i + 1] <- mean(pair_distances[selected])
+      vario_data$gamma[i + 1] <- mean(pair_semivariances[selected])
+      vario_data$np[i + 1] <- sum(selected)
     }
   }
-  return(vario_data)
+
+  vario_data
 }
