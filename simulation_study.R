@@ -60,6 +60,11 @@ distances <- compose_distances(dist, P)
 
 U <- evaluate_U(PI)
 
+lenghts <- unlist(lapply(distances, function(x) mean(unlist(lapply(x$lengths,
+          function(y) mean(y[,1], na.rm=T))), na.rm=T)))
+range <- max(lenghts[which(!is.na(lenghts))])*10
+save(range, file = paste0("Data/range_heatmap_", domain, ".RData"))
+
 #### Evaluate positive definiteness of our model ####
 
 sill <- 1
