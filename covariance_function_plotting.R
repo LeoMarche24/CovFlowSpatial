@@ -36,6 +36,15 @@ plot(bias, pch = 16, col = third)
 ind <- 15
 hist(res_total[[ind]], breaks = 20, main = paste("Year", as.character(years[ind])), 
      xlab = "Residuals", col = grey)
+qqnorm(res_total[[ind]], main = paste("Year", as.character(years[ind])))
+qqline(res_total[[ind]], col = third)
+# Descriptive diagnostics: residuals are spatially dependent.
+print(t(sapply(setNames(res_total, years), function(x) {
+  z <- as.numeric(scale(x))
+  c(skewness = mean(z^3), excess_kurtosis = mean(z^4) - 3,
+    qq_correlation = cor(sort(z), qnorm(ppoints(length(z)))),
+    tail_3 = mean(abs(z) > 3), normal_tail_3 = 2 * pnorm(-3))
+})))
 
 plot(years, sill, pch = 16, col = third)
 plot(years, range, pch = 16, col = third)
