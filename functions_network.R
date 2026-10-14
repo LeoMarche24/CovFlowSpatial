@@ -294,7 +294,7 @@ update <- function(p, dist, prob)
             new_PI <- 0
           else
             new_PI <- p$lengths[[i]][j, 2]*step
-          if (new_PI > 1e-5 && !(inx[k] %in% p$visited[[i]][[j]]))
+          if (new_PI > 1e-3 && !(inx[k] %in% p$visited[[i]][[j]]))
           {
             p$lengths[[inx[k]]] <- rbind(p$lengths[[inx[k]]], 
                                          c(new_dist, new_PI))
