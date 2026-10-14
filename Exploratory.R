@@ -266,6 +266,55 @@ ggsave(
   limitsize = FALSE
 )
 
+p <- ggmap(map, darken = c(.356,"white")) +
+  geom_tile(data = df[which(!is.na(df$east) & !is.na(df$north) & !is.na(df$value)) ,], 
+            mapping = aes(x = lon, y = lat, fill=value), alpha = 0.8) +
+  labs(x = "Longitude", y = "Latitude") +
+  scale_fill_gradient(low = col1, high = col2, name = "Temperature") + 
+  theme_minimal() +
+  theme(
+    legend.position = 'none',
+    axis.text = element_text(size = plot_size*3),
+    axis.title = element_text(size = plot_size*3)
+  )
+p
+ggsave(
+  filename = paste0(output, "SST.pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size * aspect_ratio,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
+
+df$temp <- 0
+p <- ggmap(map, darken = c(.356,"white")) +
+  geom_tile(data = df[which(!is.na(df$east) & !is.na(df$north) & !is.na(df$value)) ,], 
+            mapping = aes(x = lon, y = lat, fill=temp), alpha = 0.8) +
+  geom_segment(data = df[which(!is.na(df$value)) ,], 
+               aes(x = lon, y = lat, xend = lon + east, yend = lat + north),
+               arrow = arrow(length = unit(0.3, "cm")), color = fourth, alpha=0.8, 
+               linewidth = 2) +
+  labs(x = "Longitude", y = "Latitude") +
+  scale_fill_gradient(low = "gray80", high = "gray80") + 
+  theme_minimal() +
+  theme(
+    legend.position = 'none',
+    axis.text = element_text(size = plot_size*3),
+    axis.title = element_text(size = plot_size*3)
+  )
+p
+ggsave(
+  filename = paste0(output, "Velocity_Field.pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size * aspect_ratio,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
+
 results <- compute_matrices(df = df)
 dist <- results[[1]]
 PI <- results[[2]]
