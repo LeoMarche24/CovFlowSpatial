@@ -18,7 +18,7 @@ fourth <- "#333399"
 col5 <- rgb(204/255, 0/255, 0/255)
 grey <- "grey80"
 
-domain <- "Temp"
+domain <- "Sardinia"
 load(paste0("Data/Data_", domain, ".RData"))
 load(paste0("Data/bbox_", domain, ".RData"))
 df <- df[which(df$years == 2022) ,]
@@ -109,6 +109,10 @@ errors <- vector("list", length = R)
 errors_eucl <- vector("list", length = R)
 MSE <- matrix(0, nrow = K, ncol = R)
 MSE_eucl <- matrix(0, nrow = K, ncol = R)
+MSE_oracle <- matrix(0, nrow = K, ncol = R)
+CRPS <- matrix(0, nrow = K, ncol = R)
+CRPS_eucl <- matrix(0, nrow = K, ncol = R)
+CRPS_oracle <- matrix(0, nrow = K, ncol = R)
 
 coords <- df_eucl@coords
 dist_eucl <- as.matrix(dist(coords))
@@ -182,6 +186,19 @@ for (r in 1:R)
     
     errors_temp[iter, test] <- simulation[test] - predictions$preds
     MSE[iter, r] <- mean((predictions$preds - simulation[test])^2)
+    prediction_sd <- sqrt(predictions$vars)
+    z <- (simulation[test]-predictions$preds)/prediction_sd
+    CRPS[iter, r] <- mean(
+      prediction_sd*(z*(2*pnorm(z)-1)+2*dnorm(z)-1/sqrt(pi)))
+
+    predictions_oracle <- evaluate_test(
+      simulation[train], cov, train, test)
+    MSE_oracle[iter, r] <- mean(
+      (predictions_oracle$preds - simulation[test])^2)
+    prediction_sd <- sqrt(predictions_oracle$vars)
+    z <- (simulation[test]-predictions_oracle$preds)/prediction_sd
+    CRPS_oracle[iter, r] <- mean(
+      prediction_sd*(z*(2*pnorm(z)-1)+2*dnorm(z)-1/sqrt(pi)))
     
     # Eucliean framework
     
@@ -215,6 +232,10 @@ for (r in 1:R)
     
     errors_temp_eucl[iter, test] <- simulation[test] - predictions_eucl$preds
     MSE_eucl[iter, r] <- mean((predictions_eucl$preds - simulation[test])^2)
+    prediction_sd <- sqrt(predictions_eucl$vars)
+    z <- (simulation[test]-predictions_eucl$preds)/prediction_sd
+    CRPS_eucl[iter, r] <- mean(
+      prediction_sd*(z*(2*pnorm(z)-1)+2*dnorm(z)-1/sqrt(pi)))
     
   }
   errors[[r]] <- errors_temp
@@ -228,14 +249,17 @@ line_size <- 2
 data <- data.frame(
   value = c(rowMeans(sills), rowMeans(sills_eucl)),
   group = factor(c(rep("New framework", K),
-                   rep("Euclidean framework", K)))
+                   rep("Euclidean framework", K)),
+                 levels = c("New framework", "Euclidean framework"))
 )
 
 p <- ggplot(data, aes(x = value, fill = group)) +
   geom_density(aes(y = after_stat(density)), alpha = 0.5, position = "identity") +
   geom_vline(xintercept = sill, linetype = "dashed", color = "black") +
   facet_wrap(~ group, ncol = 1, scales = "fixed") +
-  scale_fill_manual(values = c(third, col5)) +
+  scale_fill_manual(values = c(
+    "New framework" = third,
+    "Euclidean framework" = col5)) +
   theme_minimal() +
   labs(x = NULL, y = NULL) +
   xlim(0, 2 * sill) +
@@ -417,47 +441,24 @@ ggsave(
 )
 }
 
-MSE_estimate <- data.frame(MSE = c(unlist(lapply(1:R, function(x)
+MSE_estimate <- data.frame(MSE = unlist(lapply(1:R, function(x)
   unlist(lapply(covariances[[x]], function(y)
     sum((y$gamma - exponential_covariance(c(sill, range[x]), y$dist))^2))))),
-  unlist(lapply(1:R, function(x)
-    sapply(1:K, function(y) sum((rep(sills_eucl[y,x],
-              length(covariances[[x]][[y]]$dist)) -
-     exponential_kernel(c(sill, range[x]), covariances[[x]][[y]]$dist))^2))))),
-  range = rep(rep(range, each = K), 2),
-  process = c(rep("Covariance funct.", K*R),
-              rep("Variance est.", K*R)))
+  range = rep(range, each = K))
 
-expr_labels <- expression(
-  paste("||", hat(C)(h) - C(h), "||"),
-  paste("||", hat(C)[eucl](h) - C(h), "||")
-)
-
-p <- ggplot(MSE_estimate, aes(x = factor(range), y = MSE, fill = process,
-                           color = process)) +
-  geom_boxplot(alpha = 0.5) +
-  scale_fill_manual(values = c(third, col5), labels = expr_labels) +
-  scale_color_manual(values = c(third, col5), guide = 'none') +
-  labs(x = "Range (km in network distance)", y = "MSE of the estimator", fill = "Framework") +
+p <- ggplot(MSE_estimate, aes(x = factor(range), y = MSE)) +
+  geom_boxplot(alpha = 0.5, fill = third, color = third) +
+  labs(x = "Range (km in network distance)", y = "MSE of the estimator") +
   scale_x_discrete(labels = function(x) as.character(as.integer(as.numeric(x) / 1000))) +
-  guides(
-    fill = guide_legend(label = label_parsed)
-  ) +
   ylim(0,quantile(MSE_estimate$MSE, 0.95, na.rm = T)) +
   theme_minimal() +
   theme(
-    legend.position    = "bottom",
-    legend.title       = element_blank(),
-    legend.text        = element_text(size = plot_size*3),
-    legend.spacing   = unit(plot_size * 0.5, "cm"),
     axis.title.x       = element_text(size = plot_size*3),
     axis.title.y       = element_blank(),
     axis.text.x        = element_text(size = plot_size*3),
-    axis.text.y        = element_text(size = plot_size*3),
-    legend.key.width  = unit(plot_size*0.1, "cm"),
-    legend.key.height = unit(plot_size*0.1,   "cm")
+    axis.text.y        = element_text(size = plot_size*3)
   )
-
+p
 ggsave(
   filename = paste0(output, "MSE_Estimate.pdf"),
   plot     = p,
@@ -469,36 +470,22 @@ ggsave(
 )
 
 frobenius <- data.frame(
-  error = c(frobenius_norm, frobenius_norm_eucl),
-  range = rep(rep(range, each = K),2),
-  process = factor(rep(c("Covariance function",
-                         "Euclidean"),
-                       each = K*R))
+  error = c(frobenius_norm),
+  range = rep(range, each = K)
 )
 
-p <- ggplot(frobenius, aes(x = factor(range), y = error, fill = process, color = process)) +
-  geom_boxplot(alpha = 0.5) +
-  scale_fill_manual(
-    values = c(third, col5),
-    labels = c(expression(hat(Sigma)), expression(hat(Sigma)[eucl]))
-  ) +
-  scale_color_manual(values = c(third, col5), guide = 'none') +
-  labs(x = "Range (km in network distance)", y = "Difference in Frobenius norm", fill = "Framework") +
+p <- ggplot(frobenius, aes(x = factor(range), y = error)) +
+  geom_boxplot(alpha = 0.5, fill = third, color = third) +
+  labs(x = "Range (km in network distance)", y = "Difference in Frobenius norm") +
   scale_x_discrete(labels = function(x) as.character(as.integer(as.numeric(x) / 1000))) +
   ylim(0,quantile(frobenius$error, 0.95, na.rm = T)) +
   theme_minimal()+
   theme(
-    legend.position    = "bottom",
-    legend.key         = element_rect(),
-    legend.title       = element_blank(),
-    legend.text        = element_text(size = plot_size*4),
     axis.title.x       = element_text(size = plot_size*4),
     axis.title.y       = element_blank(),
     axis.text.x        = element_text(size = plot_size*4),
-    axis.text.y        = element_text(size = plot_size*4),
-    legend.key.width  = unit(plot_size*0.1, "cm"),
-    legend.key.height = unit(plot_size*0.1,   "cm")
-    
+    axis.text.y        = element_text(size = plot_size*4)
+
   )
 p
 ggsave(
@@ -512,36 +499,22 @@ ggsave(
 )
 
 kl <- data.frame(
-  error = c(kl_divergence, kl_divergence_eucl),
-  range = rep(rep(range, each = K),2),
-  process = factor(rep(c("Covariance function",
-                         "Euclidean"),
-                       each = K*R))
+  error = c(kl_divergence),
+  range = rep(range, each = K)
 )
 
-p <- ggplot(kl, aes(x = factor(range), y = error, fill = process, color = process)) +
-  geom_boxplot(alpha = 0.5) +
-  scale_fill_manual(
-    values = c(third, col5),
-    labels = c(expression(hat(Sigma)), expression(hat(Sigma)[eucl]))
-  ) +
-  scale_color_manual(values = c(third, col2), guide = 'none') +
-  labs(x = "Range (km in network distance)", y = "Difference in KL norm", fill = "Framework") +
+p <- ggplot(kl, aes(x = factor(range), y = error)) +
+  geom_boxplot(alpha = 0.5, fill = third, color = third) +
+  labs(x = "Range (km in network distance)", y = "Difference in KL norm") +
   scale_x_discrete(labels = function(x) as.character(as.integer(as.numeric(x) / 1000))) +
   ylim(0,quantile(kl$error, 0.95, na.rm = T)) +
   theme_minimal() +
   theme(
-    legend.position    = "bottom",
-    legend.key         = element_rect(),
-    legend.title       = element_blank(),
-    legend.text        = element_text(size = plot_size*4),
     axis.title.x       = element_text(size = plot_size*4),
     axis.title.y       = element_blank(),
     axis.text.x        = element_text(size = plot_size*4),
-    axis.text.y        = element_text(size = plot_size*4),
-    legend.key.width  = unit(plot_size*0.1, "cm"),
-    legend.key.height = unit(plot_size*0.1,   "cm")
-    
+    axis.text.y        = element_text(size = plot_size*4)
+
   )
 p
 ggsave(
@@ -555,18 +528,27 @@ ggsave(
 )
 
 MSE_temp <- data.frame(
-  error = c(sqrt(MSE), sqrt(MSE_eucl)),
-  range = rep(rep(range, each = K),2),
-  process = factor(rep(c("Covariance function", "Euclidean"), each = K*R))
+  error = c(MSE, MSE_eucl, MSE_oracle),
+  range = rep(rep(range, each = K),3),
+  process = factor(
+    rep(c("Estimated covariance", "Euclidean", "Oracle"), each = K*R),
+    levels = c("Estimated covariance", "Euclidean", "Oracle"))
 )
 
 p <- ggplot(MSE_temp, aes(x = factor(range), y = error, fill = process, color = process)) +
   geom_boxplot(alpha = 0.5) +
   scale_fill_manual(
-    values = c(third, col5),
-    labels = c(expression(hat(Sigma)), expression(hat(Sigma)[eucl]))
+    values = c(
+      "Estimated covariance" = third,
+      "Euclidean" = fourth,
+      "Oracle" = col5),
+    breaks = c("Estimated covariance", "Euclidean", "Oracle"),
+    labels = c(expression(hat(Sigma)), expression(hat(Sigma)[eucl]), expression(Sigma))
   ) +
-  scale_color_manual(values = c(third, col5), guide = 'none') +
+  scale_color_manual(values = c(
+    "Estimated covariance" = third,
+    "Euclidean" = fourth,
+    "Oracle" = col5), guide = 'none') +
   labs(x = "Range (km in network distance)", y = "MSE", fill = "Framework") +
   scale_x_discrete(labels = function(x) as.character(as.integer(as.numeric(x) / 1000))) +
   ylim(0, max(MSE_temp$error)) +
@@ -582,11 +564,245 @@ p <- ggplot(MSE_temp, aes(x = factor(range), y = error, fill = process, color = 
     axis.text.y        = element_text(size = plot_size*3),
     legend.key.width  = unit(plot_size*0.1, "cm"),
     legend.key.height = unit(plot_size*0.1,   "cm")
-    
+
   )
 p
 ggsave(
   filename = paste0(output, "MSE.pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
+
+CRPS_temp <- data.frame(
+  error = c(CRPS, CRPS_eucl, CRPS_oracle),
+  range = rep(rep(range, each = K),3),
+  process = factor(
+    rep(c("Estimated covariance", "Euclidean", "Oracle"), each = K*R),
+    levels = c("Estimated covariance", "Euclidean", "Oracle"))
+)
+
+p <- ggplot(CRPS_temp, aes(x = factor(range), y = error, fill = process, color = process)) +
+  geom_boxplot(alpha = 0.5) +
+  scale_fill_manual(
+    values = c(
+      "Estimated covariance" = third,
+      "Euclidean" = fourth,
+      "Oracle" = col5),
+    breaks = c("Estimated covariance", "Euclidean", "Oracle"),
+    labels = c(expression(hat(Sigma)), expression(hat(Sigma)[eucl]), expression(Sigma))
+  ) +
+  scale_color_manual(values = c(
+    "Estimated covariance" = third,
+    "Euclidean" = fourth,
+    "Oracle" = col5), guide = 'none') +
+  labs(x = "Range (km in network distance)", y = "CRPS", fill = "Framework") +
+  scale_x_discrete(labels = function(x) as.character(as.integer(as.numeric(x) / 1000))) +
+  ylim(0, max(CRPS_temp$error)) +
+  theme_minimal() +
+  theme(
+    legend.position    = "bottom",
+    legend.key         = element_rect(),
+    legend.title       = element_blank(),
+    legend.text        = element_text(size = plot_size*3),
+    axis.title.x       = element_text(size = plot_size*3),
+    axis.title.y       = element_blank(),
+    axis.text.x        = element_text(size = plot_size*3),
+    axis.text.y        = element_text(size = plot_size*3),
+    legend.key.width  = unit(plot_size*0.1, "cm"),
+    legend.key.height = unit(plot_size*0.1,   "cm")
+
+  )
+p
+ggsave(
+  filename = paste0(output, "CRPS.pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
+
+#### Mixture simulation ####
+
+alpha <- seq(0, 1, by = 0.1)
+range_mixture <- range[3]
+
+cov_network_mixture <- build_covariance_exponential(sill, range_mixture,
+                                                     dist, P, U)
+cov_eucl_mixture <- exponential_covariance(c(sill, range_mixture), dist_eucl)
+
+MSE_mixture <- matrix(0, nrow = K, ncol = length(alpha))
+MSE_mixture_eucl <- matrix(0, nrow = K, ncol = length(alpha))
+CRPS_mixture <- matrix(0, nrow = K, ncol = length(alpha))
+CRPS_mixture_eucl <- matrix(0, nrow = K, ncol = length(alpha))
+
+for (a in seq_along(alpha))
+{
+  cov_mixture <- alpha[a] * cov_network_mixture +
+    (1 - alpha[a]) * cov_eucl_mixture
+  chol_cov_mixture <- chol(cov_mixture)
+
+  for (iter in 1:K)
+  {
+    print(iter)
+    simulation <- t(chol_cov_mixture) %*% simulation_distribution[iter,]
+    set.seed(iter)
+    test <- sample(seq_along(inx), length(inx)/3)
+    train <- setdiff(1:B, test)
+
+    covariance <- evaluate_covariance_penalization_train(simulation,
+                                                         distances, train, l-1, U, return_fuv = T)
+    sill_est <- covariance[[1]]
+    covariance <- covariance[[2]]
+    range_est <- fit_range(covariance, exponential_covariance,
+                           max(covariance$dist)/3, sill_est)
+    covariance_est <- build_covariance_exponential(sill_est, range_est,
+                                                   dist, P, U)
+
+    if(!all(eigen(covariance_est)$values>1e-15))
+    {
+      covariance_est <- diag(rep(sill_est, B))
+    }
+
+    predictions <- evaluate_test(simulation[train], covariance_est, train, test)
+    MSE_mixture[iter, a] <- mean((predictions$preds - simulation[test])^2)
+    prediction_sd <- sqrt(predictions$vars)
+    z <- (simulation[test]-predictions$preds)/prediction_sd
+    CRPS_mixture[iter, a] <- mean(
+      prediction_sd*(z*(2*pnorm(z)-1)+2*dnorm(z)-1/sqrt(pi)))
+
+    covariance_eucl_temp <- calc_covariance(df_eucl[train,]@coords, simulation[train])
+    sill_eucl <- covariance_eucl_temp$gamma[1]
+    range_eucl <- fit_range(covariance_eucl_temp, exponential_covariance,
+                            max(covariance_eucl_temp$dist/3), sill_eucl)
+
+    if (range_eucl == 0)
+    {
+      covariance_est_eucl <- diag(rep(sill_eucl, B))
+    }
+    else
+    {
+      covariance_est_eucl <- exponential_covariance(c(sill_eucl, range_eucl),
+                                                     as.matrix(dist_eucl))
+    }
+
+    predictions_eucl <- evaluate_test(simulation[train],
+                                      covariance_est_eucl, train, test)
+    MSE_mixture_eucl[iter, a] <- mean((predictions_eucl$preds - simulation[test])^2)
+    prediction_sd <- sqrt(predictions_eucl$vars)
+    z <- (simulation[test]-predictions_eucl$preds)/prediction_sd
+    CRPS_mixture_eucl[iter, a] <- mean(
+      prediction_sd*(z*(2*pnorm(z)-1)+2*dnorm(z)-1/sqrt(pi)))
+  }
+}
+
+MSE_mixture_temp <- data.frame(
+  error = c(MSE_mixture, MSE_mixture_eucl),
+  alpha = rep(rep(alpha, each = K), 2),
+  process = factor(rep(c("Covariance function", "Euclidean"),
+                       each = K*length(alpha)),
+                   levels = c("Covariance function", "Euclidean"))
+)
+
+MSE_mixture_summary <- data.frame(
+  alpha = rep(alpha, 2),
+  process = factor(rep(c("Covariance function", "Euclidean"),
+                       each = length(alpha)),
+                   levels = c("Covariance function", "Euclidean")),
+  MSE = c(colMeans(MSE_mixture), colMeans(MSE_mixture_eucl))
+)
+
+CRPS_mixture_temp <- data.frame(
+  error = c(CRPS_mixture, CRPS_mixture_eucl),
+  alpha = rep(rep(alpha, each = K), 2),
+  process = factor(rep(c("Covariance function", "Euclidean"),
+                       each = K*length(alpha)),
+                   levels = c("Covariance function", "Euclidean"))
+)
+
+CRPS_mixture_summary <- data.frame(
+  alpha = rep(alpha, 2),
+  process = factor(rep(c("Covariance function", "Euclidean"),
+                       each = length(alpha)),
+                   levels = c("Covariance function", "Euclidean")),
+  CRPS = c(colMeans(CRPS_mixture), colMeans(CRPS_mixture_eucl))
+)
+
+p <- ggplot(MSE_mixture_temp, aes(x = factor(alpha), y = error,
+                                  fill = process, color = process)) +
+  geom_boxplot(alpha = 0.5) +
+  scale_fill_manual(
+    values = c(
+      "Covariance function" = third,
+      "Euclidean" = col5),
+    breaks = c("Covariance function", "Euclidean"),
+    labels = c(expression(hat(Sigma)), expression(hat(Sigma)[eucl]))
+  ) +
+  scale_color_manual(values = c(
+    "Covariance function" = third,
+    "Euclidean" = col5), guide = 'none') +
+  labs(x = expression(alpha), y = "MSE", fill = "Framework") +
+  ylim(0, max(MSE_mixture_temp$error)) +
+  theme_minimal() +
+  theme(
+    legend.position    = "bottom",
+    legend.key         = element_rect(),
+    legend.title       = element_blank(),
+    legend.text        = element_text(size = plot_size*3),
+    axis.title.x       = element_text(size = plot_size*3),
+    axis.title.y       = element_blank(),
+    axis.text.x        = element_text(size = plot_size*3),
+    axis.text.y        = element_text(size = plot_size*3),
+    legend.key.width  = unit(plot_size*0.1, "cm"),
+    legend.key.height = unit(plot_size*0.1,   "cm")
+  )
+p
+ggsave(
+  filename = paste0(output, "MSE_Mixture.pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
+
+p <- ggplot(CRPS_mixture_temp, aes(x = factor(alpha), y = error,
+                                   fill = process, color = process)) +
+  geom_boxplot(alpha = 0.5) +
+  scale_fill_manual(
+    values = c(
+      "Covariance function" = third,
+      "Euclidean" = col5),
+    breaks = c("Covariance function", "Euclidean"),
+    labels = c(expression(hat(Sigma)), expression(hat(Sigma)[eucl]))
+  ) +
+  scale_color_manual(values = c(
+    "Covariance function" = third,
+    "Euclidean" = col5), guide = 'none') +
+  labs(x = expression(alpha), y = "CRPS", fill = "Framework") +
+  ylim(0, max(CRPS_mixture_temp$error)) +
+  theme_minimal() +
+  theme(
+    legend.position    = "bottom",
+    legend.key         = element_rect(),
+    legend.title       = element_blank(),
+    legend.text        = element_text(size = plot_size*3),
+    axis.title.x       = element_text(size = plot_size*3),
+    axis.title.y       = element_blank(),
+    axis.text.x        = element_text(size = plot_size*3),
+    axis.text.y        = element_text(size = plot_size*3),
+    legend.key.width  = unit(plot_size*0.1, "cm"),
+    legend.key.height = unit(plot_size*0.1,   "cm")
+  )
+p
+ggsave(
+  filename = paste0(output, "CRPS_Mixture.pdf"),
   plot     = p,
   width    = plot_size,
   height   = plot_size,
