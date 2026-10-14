@@ -1,0 +1,12 @@
+#!/bin/bash
+#PBS -S /bin/bash
+#PBS -l select=1:ncpus=5:mem=100gb,walltime=24:00:00
+#PBS -N sensibility
+#PBS -j oe
+#PBS -o sensibility_estimator.txt
+
+set -eu
+container_img="/u/marchesin/containers/r-geo-phd_v3.0.sif"
+cd "${PBS_O_WORKDIR}/.."
+/opt/mox/apptainer/bin/apptainer exec "${container_img}" \
+  Rscript sensibility_estimator.R
