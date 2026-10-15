@@ -39,15 +39,16 @@ CovFlowSpatial/
 ├── Exploratory.R                            # Exploratory spatial analysis and network visualization
 │                                            #   (Figures 1, 3)
 ├── covariance_estimation.R                  # Penalized covariance estimator (Section 4,
-│                                            #   Proposition 5); reproduces Figure 5
+│                                            #   Proposition 5)
 ├── covariance_function_plotting.R           # Covariance diagnostics and final parameter estimates
+|                                            #   (Figure 11)
 ├── simulation_study.R                       # Simulation study validating the estimation procedure
 │                                            #   (Section 5 and Supplementary Material)
 ├── sensibility_estimator.R                  # Sensitivity analysis for the covariance estimator
 ├── cross_validation_rolling_blocks.R        # Rolling spatial-block cross-validation
 ├── plot_results.R                           # Cross-validation plots and numerical summaries
 ├── hot_spot_identification.R                # Monte Carlo SST simulation + excursion sets
-├── plot_hot_spot.R                          # Final hot-spot visualization (Figure 11)
+├── plot_hot_spot.R                          # Final hot-spot visualization (Figure 12)
 ├── ConvProcessLinearNetwork.Rproj           # RStudio project file
 └── README.md
 ```
@@ -112,13 +113,13 @@ Run scripts in the following order. All scripts assume the working directory is 
 |------|--------|--------------|-----------------|
 | 1 | `Exploratory.R` | Exploratory analysis; builds and visualizes the linear network | Figures 1, 2 and 3 |
 | 2 | `covariance_estimation.R` | Fits the penalized covariance estimator over 2006–2022 residuals | Section 4 and Section 6.1 |
-| 3 | `covariance_function_plotting.R` | Produces covariance diagnostics and saves the final fitted parameters | Section 6.1, Figure 10 |
+| 3 | `covariance_function_plotting.R` | Produces covariance diagnostics and saves the final fitted parameters | Section 6.1, Figure 11 |
 | 4 | `simulation_study.R` | Runs the simulation study validating the estimator | Section 5 and Supplementary Material |
 | 5 | `sensibility_estimator.R` | Evaluates sensitivity to the number of covariance bins | Supplementary Material |
 | 6 | `cross_validation_rolling_blocks.R` | Performs rolling spatial-block cross-validation | Supplementary Material |
 | 7 | `plot_results.R` | Produces cross-validation plots and numerical summaries | Supplementary Material |
 | 8 | `hot_spot_identification.R` | Generates M = 500 Monte Carlo SST realizations; computes excursion sets | Section 6.2 |
-| 9 | `plot_hot_spot.R` | Produces final hot-spot maps | Figure 11 |
+| 9 | `plot_hot_spot.R` | Produces final hot-spot maps | Figure 12 |
 
 > ⚠️ **The estimation and simulation scripts on the Sardinia domain are computationally intensive.** PBS submission files are provided in `jobs/`. The active domain can be switched from `"Sardinia"` to `"Temp"` at the top of each analysis script, with settings adjusted to the size of the selected domain when needed.
 
