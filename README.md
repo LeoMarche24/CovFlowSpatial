@@ -10,41 +10,44 @@ We introduce a convolution-based covariance framework for geostatistical domains
 
 The repository implements the analysis on two domains:
 
-- **Sardinia domain** (`*Sardinia*`): the full-scale domain used for all results reported in the paper. The hot-spot identification step (Step 6) is computationally intensive and requires an HPC cluster.
-- **Tyrrhenian (Temp) domain** (`*Temp*`): a reduced toy domain designed to allow the complete pipeline to be run on a local machine, suitable for exploration and testing.
+- **Sardinia domain** (`*Sardinia*`): the full-scale domain used for all results reported in the paper. The main estimation and simulation steps are computationally intensive and are intended to be run on an HPC cluster.
+- **Tyrrhenian (Temp) domain** (`*Temp*`): a reduced toy domain suitable for local exploration and testing. Domain-specific settings are defined at the top of each analysis script.
 
 ---
 
 ## Repository Structure
 
 ```
-ConvProcHotSpot/
+CovFlowSpatial/
 ├── Data/
 │   ├── Pre_Processing/                      # Raw data preprocessing scripts
-│   ├── Data_Sardinia.RData                  # Processed SST residuals – Sardinia domain
-│   ├── Data_Temp.RData                      # Processed SST residuals – Tyrrhenian domain
-│   ├── Covariance_Data_45_Sardinia.RData    # Covariance estimation inputs – Sardinia, RCP 4.5
-│   ├── Covariance_Data_45_Temp.RData        # Covariance estimation inputs – Tyrrhenian, RCP 4.5
+│   ├── Data_Sardinia.RData                  # Processed SST observations – Sardinia domain
+│   ├── Data_Temp.RData                      # Processed SST observations – Tyrrhenian domain
+│   ├── Covariance_Data_45_*.RData           # Final fitted covariance parameters – RCP 4.5
+│   ├── Covariance_Estimation_45_*.RData     # Yearly covariance-estimation results
+│   ├── Cross_Validation_*.RData             # Rolling-block cross-validation results
 │   ├── Projections_Sardinia.RData           # RCP 4.5 SST projections – Sardinia domain
 │   ├── Projections_Temp.RData               # RCP 4.5 SST projections – Tyrrhenian domain
 │   ├── data_projection_Sardinia_2050.RData  # Simulated SST fields – Sardinia, 2050
 │   ├── data_projection_Temp_2050.RData      # Simulated SST fields – Tyrrhenian, 2050
 │   ├── bbox_Sardinia.RData                  # Bounding box – Sardinia domain
 │   └── bbox_Temp.RData                      # Bounding box – Tyrrhenian domain
-├── HPC/                                     # Cluster submission scripts (see HPC section)
+├── jobs/                                    # PBS cluster submission scripts
 ├── functions_network.R                      # Core functions: directed network construction,
 │                                            #   transition matrix, path enumeration (Sections 2.2–2.3)
-├── functions_observations.R                 # Core functions: data preprocessing, spatial alignment,
-│                                            #   residual computation (Section 5.1)
-├── exploratory.R                            # Exploratory spatial analysis and network visualization
+├── functions_observations.R                 # Covariance estimation, fitting and prediction functions
+├── Exploratory.R                            # Exploratory spatial analysis and network visualization
 │                                            #   (Figures 1, 3)
 ├── covariance_estimation.R                  # Penalized covariance estimator (Section 4,
-│                                            #   Proposition 5); reproduces Figure 6
+│                                            #   Proposition 5); reproduces Figure 5
+├── covariance_function_plotting.R           # Covariance diagnostics and final parameter estimates
 ├── simulation_study.R                       # Simulation study validating the estimation procedure
-│                                            #   (Supplementary Material)
-├── hot_spot_identification.R                 # Monte Carlo SST simulation + excursion sets
-│                                            #   (Section 5.2); reproduces Figures 7, 8
-├── plot_hotSpot.R                           # Final hot-spot visualization (Figure 8)
+│                                            #   (Section 5 and Supplementary Material)
+├── sensibility_estimator.R                  # Sensitivity analysis for the covariance estimator
+├── cross_validation_rolling_blocks.R        # Rolling spatial-block cross-validation
+├── plot_results.R                           # Cross-validation plots and numerical summaries
+├── hot_spot_identification.R                # Monte Carlo SST simulation + excursion sets
+├── plot_hot_spot.R                          # Final hot-spot visualization (Figure 11)
 ├── ConvProcessLinearNetwork.Rproj           # RStudio project file
 └── README.md
 ```
@@ -82,36 +85,48 @@ Once downloaded, place the raw files in `Data/Pre_Processing/` and run the scrip
 
 ```r
 install.packages(c(
-  "igraph",      # directed network construction and path enumeration
-  "sf",          # spatial data handling
-  "terra",       # raster operations
-  "ggplot2",     # visualization
-  "tidyverse"    # data manipulation
+  "sp",
+  "gstat",
+  "ncdf4",
+  "ggplot2",
+  "spatstat",
+  "igraph",
+  "sf",
+  "progress",
+  "ggmap",
+  "ggforce",
+  "tidyverse",
+  "plotly",
+  "reshape2",
+  "geosphere"
 ))
+```
 
 ---
 
 ## How to Reproduce — Step-by-Step
 
-Run scripts in the following order. All scripts assume the working directory is the repository root.
+Run scripts in the following order. All scripts assume the working directory is the repository root. The helper files `functions_network.R` and `functions_observations.R` are sourced automatically by the analysis scripts.
 
 | Step | Script | What it does | Paper reference |
 |------|--------|--------------|-----------------|
-| 1 | `functions_network.R` | **Source first.** Defines all network construction and covariance functions | Sections 2.2, 2.3, 3 |
-| 2 | `functions_observations.R` | **Source first.** Defines data loading, alignment and residual utilities | Section 5.1 |
-| 3 | `Exploratory.R` | Exploratory analysis; builds and visualizes the linear network | Figures 1, 3 |
-| 4 | `Covariance Estimation.R` | Fits the penalized covariance estimator over 2006–2022 residuals | Section 4, Figure 6 |
-| 5 | `Simulation Study.R` | Runs the simulation study validating the estimator | Supplementary Material |
-| 6 | `HotSpot Identification.R` | Generates M = 500 Monte Carlo SST realizations; computes excursion sets | Section 5.2, Figures 7, 8 |
-| 7 | `Plot HotSpot.R` | Produces final hot-spot maps | Figure 8 |
+| 1 | `Exploratory.R` | Exploratory analysis; builds and visualizes the linear network | Figures 1, 3 |
+| 2 | `covariance_estimation.R` | Fits the penalized covariance estimator over 2006–2022 residuals | Section 4, Figure 6 |
+| 3 | `covariance_function_plotting.R` | Produces covariance diagnostics and saves the final fitted parameters | Section 4, Figure 6 |
+| 4 | `simulation_study.R` | Runs the simulation study validating the estimator | Supplementary Material |
+| 5 | `sensibility_estimator.R` | Evaluates sensitivity to the number of covariance bins | Supplementary Material |
+| 6 | `cross_validation_rolling_blocks.R` | Performs rolling spatial-block cross-validation | Model validation |
+| 7 | `plot_results.R` | Produces cross-validation plots and numerical summaries | Model validation |
+| 8 | `hot_spot_identification.R` | Generates M = 500 Monte Carlo SST realizations; computes excursion sets | Section 5.2, Figures 7, 8 |
+| 9 | `plot_hot_spot.R` | Produces final hot-spot maps | Figure 8 |
 
-> ⚠️ **Steps 5 and 6 on the Sardinia domain are computationally intensive** and require an HPC cluster. The Tyrrhenian (Temp) domain can be used to run the full pipeline locally for testing purposes. The active domain can be switched from `"Sardinia"` to `"Temp"` at the top of each script.
+> ⚠️ **The estimation and simulation scripts on the Sardinia domain are computationally intensive.** PBS submission files are provided in `jobs/`. The active domain can be switched from `"Sardinia"` to `"Temp"` at the top of each analysis script, with settings adjusted to the size of the selected domain when needed.
 
 ---
 
 ## HPC
 
-Steps 5–6 on the Sardinia domain were executed on an HPC cluster using [Apptainer](https://apptainer.org/) (formerly Singularity) for containerized and fully reproducible execution.
+The computationally intensive analyses on the Sardinia domain were executed on an HPC cluster using [Apptainer](https://apptainer.org/) (formerly Singularity) for containerized execution.
 
 ### Container
 
@@ -121,21 +136,28 @@ The runtime environment is packaged as an Apptainer image built from a Docker ba
 To pull and convert the Docker image to an Apptainer `.sif` file:
 
 ```bash
-apptainer pull myimage.sif docker://leonardo2405/r-geo-phd:v3
+apptainer pull r-geo-phd_v3.0.sif docker://leonardo2405/r-geo-phd:v3
 ```
 
 ### Running the Analysis
 
 ```bash
-apptainer exec myimage.sif Rscript "Name_Script"
+apptainer exec r-geo-phd_v3.0.sif Rscript simulation_study.R
 ```
 
-Submission scripts for the PBS scheduler are provided in `HPC/`. The Sardinia hot-spot identification step requires approximately **30 GB of RAM** and completes in **under 30 minutes** on the cluster.
+Submission scripts for the PBS scheduler are provided in `jobs/`. They assume that jobs are submitted from that directory and move to the repository root before running the corresponding R script:
+
+```bash
+cd jobs
+qsub simulation_study.job
+```
+
+Before submission, update `container_img` and the Apptainer executable path in the `.job` files to match the local cluster configuration. Requested CPUs, memory and wall time are specified in each submission file.
 
 ---
 
 ## License
 
-This repository is licensed under the [MIT License](LICENSE).
+This repository is licensed under the [MIT License](LICENSE.txt).
 
 ---
