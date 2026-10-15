@@ -23,7 +23,7 @@ domain <- "Sardinia"
 load(paste0("Data/Data_", domain, ".RData"))
 df <- df[which(df$years == 2022) ,]
 register_stadiamaps("424ec34b-4e14-4acc-8aa9-9e8ab4f4fbc9", write = FALSE)
-load(paste0("Data/bbox_", domain, ".Rdata"))
+load(paste0("Data/bbox_", domain, ".RData"))
 map <- get_stadiamap(bbox, zoom = 8, maptype = "alidade_smooth")
 output <- "Plots/Exploratory/"
 
