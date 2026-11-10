@@ -137,13 +137,13 @@ The runtime environment is packaged as an Apptainer image built from a Docker ba
 To pull and convert the Docker image to an Apptainer `.sif` file:
 
 ```bash
-apptainer pull r-geo-phd_v3.0.sif docker://leonardo2405/r-geo-phd:v3
+apptainer pull r-geo-phd_v4.1.sif docker://leonardo2405/r-geo-phd:v3
 ```
 
 ### Running the Analysis
 
 ```bash
-apptainer exec r-geo-phd_v3.0.sif Rscript simulation_study.R
+apptainer exec r-geo-phd_v4.1.sif Rscript simulation_study.R
 ```
 
 Submission scripts for the PBS scheduler are provided in `jobs/`. They assume that jobs are submitted from that directory and move to the repository root before running the corresponding R script:
