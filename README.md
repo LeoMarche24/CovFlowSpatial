@@ -137,7 +137,7 @@ The runtime environment is packaged as an Apptainer image built from a Docker ba
 To pull and convert the Docker image to an Apptainer `.sif` file:
 
 ```bash
-apptainer pull r-geo-phd_v4.1.sif docker://leonardo2405/r-geo-phd:v3
+apptainer pull r-geo-phd_v4.1.sif docker://leonardo2405/r-geo-phd:v4.1
 ```
 
 ### Running the Analysis
