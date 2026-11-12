@@ -9,8 +9,6 @@ col5 <- rgb(204/255, 0/255, 0/255)
 
 domain <- "Sardinia"
 plot_size <- 7
-output <- "Plots/Cross_Validation/"
-dir.create(output, recursive = T, showWarnings = F)
 
 model_colors <- c(
   Network = third,
@@ -66,12 +64,6 @@ p_model <- ggplot(
   plot_theme
 
 print(p_model)
-ggsave(
-  filename = paste0(output, "Scores_By_Model.pdf"),
-  plot = p_model,
-  width = 12,
-  height = 8,
-  units = "in")
 
 #### Paired model comparisons ####
 
@@ -83,12 +75,45 @@ paired_results <- results %>%
 
 #### Numerical summaries ####
 
-model_summary <- results %>%
-  group_by(model) %>%
+# Average spatial blocks within each year before estimating uncertainty.
+# The t intervals below assume independent, approximately normal yearly means;
+# they do not account for dependence between years from rolling estimation.
+confidence_level <- 0.95
+
+yearly_scores <- results %>%
+  group_by(model, year) %>%
   summarise(
     MSE = mean(MSE),
     CRPS = mean(CRPS),
     .groups = "drop")
+
+model_summary <- yearly_scores %>%
+  group_by(model) %>%
+  summarise(
+    n_years = n(),
+    MSE_se = sd(MSE) / sqrt(n_years),
+    MSE = mean(MSE),
+    CRPS_se = sd(CRPS) / sqrt(n_years),
+    CRPS = mean(CRPS),
+    .groups = "drop") %>%
+  mutate(
+    CRPS_margin = qt((1 + confidence_level) / 2, df = pmax(n_years - 1, 1)) * CRPS_se,
+    CRPS_lower = CRPS - CRPS_margin,
+    CRPS_upper = CRPS + CRPS_margin,
+    MSE_margin = qt((1 + confidence_level) / 2, df = pmax(n_years - 1, 1)) * MSE_se,
+    MSE_lower = MSE - MSE_margin,
+    MSE_upper = MSE + MSE_margin) %>%
+  select(-c(MSE_margin,CRPS_margin))
+
+p_mse_ci <- ggplot(model_summary, aes(x = model, y = MSE, color = model)) +
+  geom_errorbar(aes(ymin = MSE_lower, ymax = MSE_upper), width = 0.15) +
+  geom_point(size = 3) +
+  scale_color_manual(values = model_colors) +
+  labs(x = NULL, y = "Mean MSE",
+       subtitle = paste0(100 * confidence_level, "% t intervals across yearly means")) +
+  plot_theme
+
+print(p_mse_ci)
 
 paired_summary <- data.frame(
   metric = c("MSE", "CRPS"),

@@ -77,7 +77,7 @@ sills <- array(0, dim = c(K, R, length(bins)))
 ranges <- array(0, dim = c(K, R, length(bins)))
 MSE <- array(0, dim = c(K, R, length(bins)))
 
-xx <- seq(0, max(range)*3, length.out = 200)
+xx <- seq(0, max(range)*3, length.out = 20)
 
 simulation_distribution <- do.call(rbind, lapply(1:K, function(i)
 {

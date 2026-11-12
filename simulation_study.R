@@ -96,9 +96,11 @@ model <- "Exponential"
 output <- paste0("Plots/Simulation/", model, "/", domain, "/")
 dir.create(output, recursive = T, showWarnings = F)
 covariances <- lapply(range, function(x) vector('list', K))
+covariances_correctsill <- lapply(range, function(x) vector('list', K))
 covariances_eucl <- lapply(range, function(x) vector('list', K))
 sills <- matrix(0, nrow = K, ncol = R)
 ranges <- matrix(0, nrow = K, ncol = R)
+ranges_correctsill <- matrix(0, nrow = K, ncol = R)
 sills_eucl <- matrix(0, nrow = K, ncol = R)
 ranges_eucl <- matrix(0, nrow = K, ncol = R)
 frobenius_norm <- matrix(0, nrow = K, ncol = R)
@@ -199,6 +201,13 @@ for (r in 1:R)
     z <- (simulation[test]-predictions_oracle$preds)/prediction_sd
     CRPS_oracle[iter, r] <- mean(
       prediction_sd*(z*(2*pnorm(z)-1)+2*dnorm(z)-1/sqrt(pi)))
+
+    covariance <- evaluate_covariance_penalization_train_correctsill(simulation,
+                         distances, seq_len(B), l-1, U, sill = sill)
+    covariances_correctsill[[r]][[iter]] <- covariance
+    range_est <- fit_range(covariance, exponential_covariance,
+                           max(covariance$dist)/3, sill)
+    ranges_correctsill[iter, r] <- range_est
     
     # Eucliean framework
     
@@ -247,25 +256,27 @@ plot_size <- 5
 line_size <- 2
 
 data <- data.frame(
-  value = c(rowMeans(sills), rowMeans(sills_eucl)),
-  group = factor(c(rep("New framework", K),
-                   rep("Euclidean framework", K)),
-                 levels = c("New framework", "Euclidean framework"))
+  value = c(as.vector(sills), as.vector(sills_eucl)),
+  range = factor(rep(rep(range, each = K), 2), levels = range),
+  group = factor(c(rep("FDC model", K * R),
+                   rep("Benchmark model", K * R)),
+                 levels = c("FDC model", "Benchmark model"))
 )
 
-p <- ggplot(data, aes(x = value, fill = group)) +
-  geom_density(aes(y = after_stat(density)), alpha = 0.5, position = "identity") +
-  geom_vline(xintercept = sill, linetype = "dashed", color = "black") +
+p <- ggplot(data, aes(x = range, y = value, fill = group)) +
+  geom_boxplot(alpha = 0.5) +
+  geom_hline(yintercept = sill, linetype = "dashed", color = "black") +
   facet_wrap(~ group, ncol = 1, scales = "fixed") +
   scale_fill_manual(values = c(
-    "New framework" = third,
-    "Euclidean framework" = col5)) +
+    "FDC model" = third,
+    "Benchmark model" = col5)) +
   theme_minimal() +
-  labs(x = NULL, y = NULL) +
-  xlim(0, 2 * sill) +
+  labs(x = "Range (km in network distance)", y = "Estimated sill") +
+  scale_x_discrete(labels = function(x) as.character(as.integer(as.numeric(x) / 1000))) +
   theme(
     legend.position = "none",
     strip.text = element_text(size = plot_size*3, face = "bold"),
+    axis.title = element_text(size = plot_size*3),
     axis.text.y = element_text(size = plot_size*3),
     axis.text.x = element_text(size = plot_size*3)
   )
@@ -405,6 +416,65 @@ ggsave(
 
 empirical_df <- do.call(
   rbind,
+  lapply(seq_along(covariances_correctsill[[index]]), function(i) {
+    df <- covariances_correctsill[[index]][[i]]
+    df$group <- factor(i)
+    df
+  })s
+)
+
+xx <- seq(
+  0,
+  max(sapply(covariances_correctsill[[index]], function(x) max(x$dist))),
+  length.out = 200
+)
+yy <- exponential_covariance(c(sill, range[index]), xx)
+theoretical_df <- data.frame(dist = xx, gamma = yy)
+
+p <- ggplot() +
+  geom_line(
+    data = empirical_df,
+    aes(x = dist, y = gamma, group = group),
+    colour = "grey"
+  ) +
+  geom_line(
+    data = theoretical_df,
+    aes(x = dist, y = gamma),
+    colour = third,
+    linewidth = line_size,
+    linetype = "dashed"
+  ) +
+  scale_x_continuous(breaks = seq(0, max(theoretical_df$dist), length = 5),
+                     labels = floor(seq(0, max(theoretical_df$dist)/1000, length = 5))) +
+  coord_cartesian(ylim = c(-sill, 2 * sill)) +
+  labs(
+    x = "Network Distance",
+    y = "C",
+    title = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title.x = element_text(size = plot_size*4),
+    axis.title.y = element_text(size = plot_size*4),
+    plot.title = element_text(size = plot_size*4),
+    strip.text = element_text(size = plot_size*4),
+    axis.text.x = element_text(size = plot_size*4),
+    axis.text.y = element_text(size = plot_size*4)
+  )
+
+p
+ggsave(
+  filename = paste0(output, "Covariance_New_Correctsill", as.character(index), ".pdf"),
+  plot     = p,
+  width    = plot_size,
+  height   = plot_size,
+  units    = "in",
+  dpi      = 92,
+  limitsize = FALSE
+)
+
+empirical_df <- do.call(
+  rbind,
   lapply(seq_along(covariances_eucl[[index]]), function(i) {
     df <- covariances_eucl[[index]][[i]]
     df$group <- factor(i)
@@ -413,8 +483,8 @@ empirical_df <- do.call(
 )
 
 p <- ggplot(empirical_df, aes(x = dist, y = gamma, group = group)) +
-  geom_line(colour = grey) +                              # linee grigie
-  coord_cartesian(ylim = c(0, 2 * sill)) +                 # y ∈ [0, 2*sill]
+  geom_line(colour = grey) +
+  coord_cartesian(ylim = c(-sill, 2 * sill)) +
   labs(
     x = "Distance",
     y = expression(C),
@@ -441,20 +511,37 @@ ggsave(
 )
 }
 
-MSE_estimate <- data.frame(MSE = unlist(lapply(1:R, function(x)
-  unlist(lapply(covariances[[x]], function(y)
-    sum((y$gamma - exponential_covariance(c(sill, range[x]), y$dist))^2))))),
-  range = rep(range, each = K))
+MSE_estimate <- data.frame(
+  MSE = c(
+    unlist(lapply(1:R, function(x)
+      unlist(lapply(covariances[[x]], function(y)
+        mean((y$gamma - exponential_covariance(c(sill, range[x]), y$dist))^2))))),
+    unlist(lapply(1:R, function(x)
+      unlist(lapply(covariances_eucl[[x]], function(y)
+        mean((y$gamma - exponential_covariance(c(sill, range[x]), y$dist))^2, na.rm = T)))))),
+  range = rep(rep(range, each = K), 2),
+  process = factor(rep(c("Covariance function", "Euclidean"), each = K * R),
+                   levels = c("Covariance function", "Euclidean")))
 
-p <- ggplot(MSE_estimate, aes(x = factor(range), y = MSE)) +
-  geom_boxplot(alpha = 0.5, fill = third, color = third) +
-  labs(x = "Range (km in network distance)", y = "MSE of the estimator") +
+p <- ggplot(MSE_estimate, aes(x = factor(range), y = MSE, fill = process, color = process)) +
+  geom_boxplot(alpha = 0.5) +
+  scale_fill_manual(
+    values = c("Covariance function" = third, "Euclidean" = col5),
+    labels = c(expression(group("||", hat(C) - C, "||")),
+               expression(group("||", hat(C)[ben] - C, "||")))
+  ) +
+  scale_color_manual(
+    values = c("Covariance function" = third, "Euclidean" = col5), guide = "none") +
+  labs(x = "Range (km in network distance)", y = "MSE") +
   scale_x_discrete(labels = function(x) as.character(as.integer(as.numeric(x) / 1000))) +
   ylim(0,quantile(MSE_estimate$MSE, 0.95, na.rm = T)) +
   theme_minimal() +
   theme(
+    legend.position    = "bottom",
+    legend.title       = element_blank(),
+    legend.text        = element_text(size = plot_size*3),
     axis.title.x       = element_text(size = plot_size*3),
-    axis.title.y       = element_blank(),
+    axis.title.y       = element_text(size = plot_size*3),
     axis.text.x        = element_text(size = plot_size*3),
     axis.text.y        = element_text(size = plot_size*3)
   )
@@ -470,22 +557,37 @@ ggsave(
 )
 
 frobenius <- data.frame(
-  error = c(frobenius_norm),
-  range = rep(range, each = K)
+  error = c(frobenius_norm, frobenius_norm_eucl),
+  range = rep(rep(range, each = K),2),
+  process = factor(rep(c("Covariance function",
+                         "Euclidean"),
+                       each = K*R))
 )
 
-p <- ggplot(frobenius, aes(x = factor(range), y = error)) +
-  geom_boxplot(alpha = 0.5, fill = third, color = third) +
-  labs(x = "Range (km in network distance)", y = "Difference in Frobenius norm") +
+p <- ggplot(frobenius, aes(x = factor(range), y = error, fill = process, color = process)) +
+  geom_boxplot(alpha = 0.5) +
+  scale_fill_manual(
+    values = c(third, col5),
+    labels = c(expression(group("||", hat(Sigma) - Sigma, "||")[F]),
+               expression(group("||", hat(Sigma)[ben] - Sigma, "||")[F]))
+  ) +
+  scale_color_manual(values = c(third, col5), guide = 'none') +
+  labs(x = "Range (km in network distance)", y = expression(group("||", "\u00b7", "||")[F]), fill = "Framework") +
   scale_x_discrete(labels = function(x) as.character(as.integer(as.numeric(x) / 1000))) +
   ylim(0,quantile(frobenius$error, 0.95, na.rm = T)) +
   theme_minimal()+
   theme(
+    legend.position    = "bottom",
+    legend.key         = element_rect(),
+    legend.title       = element_blank(),
+    legend.text        = element_text(size = plot_size*4),
     axis.title.x       = element_text(size = plot_size*4),
-    axis.title.y       = element_blank(),
+    axis.title.y       = element_text(size = plot_size*4),
     axis.text.x        = element_text(size = plot_size*4),
-    axis.text.y        = element_text(size = plot_size*4)
-
+    axis.text.y        = element_text(size = plot_size*4),
+    legend.key.width  = unit(plot_size*0.1, "cm"),
+    legend.key.height = unit(plot_size*0.1,   "cm")
+    
   )
 p
 ggsave(
@@ -499,22 +601,37 @@ ggsave(
 )
 
 kl <- data.frame(
-  error = c(kl_divergence),
-  range = rep(range, each = K)
+  error = c(kl_divergence, kl_divergence_eucl),
+  range = rep(rep(range, each = K),2),
+  process = factor(rep(c("Covariance function",
+                         "Euclidean"),
+                       each = K*R))
 )
 
-p <- ggplot(kl, aes(x = factor(range), y = error)) +
-  geom_boxplot(alpha = 0.5, fill = third, color = third) +
-  labs(x = "Range (km in network distance)", y = "Difference in KL norm") +
+p <- ggplot(kl, aes(x = factor(range), y = error, fill = process, color = process)) +
+  geom_boxplot(alpha = 0.5) +
+  scale_fill_manual(
+    values = c(third, col5),
+    labels = c(expression(group("||", hat(Sigma) - Sigma, "||")[KL]),
+               expression(group("||", hat(Sigma)[ben] - Sigma, "||")[KL]))
+  ) +
+  scale_color_manual(values = c(third, col2), guide = 'none') +
+  labs(x = "Range (km in network distance)", y = expression(group("||", "\u00b7", "||")[KL]), fill = "Framework") +
   scale_x_discrete(labels = function(x) as.character(as.integer(as.numeric(x) / 1000))) +
   ylim(0,quantile(kl$error, 0.95, na.rm = T)) +
   theme_minimal() +
   theme(
+    legend.position    = "bottom",
+    legend.key         = element_rect(),
+    legend.title       = element_blank(),
+    legend.text        = element_text(size = plot_size*4),
     axis.title.x       = element_text(size = plot_size*4),
-    axis.title.y       = element_blank(),
+    axis.title.y       = element_text(size = plot_size*4),
     axis.text.x        = element_text(size = plot_size*4),
-    axis.text.y        = element_text(size = plot_size*4)
-
+    axis.text.y        = element_text(size = plot_size*4),
+    legend.key.width  = unit(plot_size*0.1, "cm"),
+    legend.key.height = unit(plot_size*0.1,   "cm")
+    
   )
 p
 ggsave(
@@ -543,7 +660,7 @@ p <- ggplot(MSE_temp, aes(x = factor(range), y = error, fill = process, color = 
       "Euclidean" = fourth,
       "Oracle" = col5),
     breaks = c("Estimated covariance", "Euclidean", "Oracle"),
-    labels = c(expression(hat(Sigma)), expression(hat(Sigma)[eucl]), expression(Sigma))
+    labels = c(expression(hat(Sigma)), expression(hat(Sigma)[ben]), expression(Sigma))
   ) +
   scale_color_manual(values = c(
     "Estimated covariance" = third,
@@ -559,7 +676,7 @@ p <- ggplot(MSE_temp, aes(x = factor(range), y = error, fill = process, color = 
     legend.title       = element_blank(),
     legend.text        = element_text(size = plot_size*3),
     axis.title.x       = element_text(size = plot_size*3),
-    axis.title.y       = element_blank(),
+    axis.title.y       = element_text(size = plot_size*3),
     axis.text.x        = element_text(size = plot_size*3),
     axis.text.y        = element_text(size = plot_size*3),
     legend.key.width  = unit(plot_size*0.1, "cm"),
@@ -593,7 +710,7 @@ p <- ggplot(CRPS_temp, aes(x = factor(range), y = error, fill = process, color =
       "Euclidean" = fourth,
       "Oracle" = col5),
     breaks = c("Estimated covariance", "Euclidean", "Oracle"),
-    labels = c(expression(hat(Sigma)), expression(hat(Sigma)[eucl]), expression(Sigma))
+    labels = c(expression(hat(Sigma)), expression(hat(Sigma)[ben]), expression(Sigma))
   ) +
   scale_color_manual(values = c(
     "Estimated covariance" = third,
@@ -609,7 +726,7 @@ p <- ggplot(CRPS_temp, aes(x = factor(range), y = error, fill = process, color =
     legend.title       = element_blank(),
     legend.text        = element_text(size = plot_size*3),
     axis.title.x       = element_text(size = plot_size*3),
-    axis.title.y       = element_blank(),
+    axis.title.y       = element_text(size = plot_size*3),
     axis.text.x        = element_text(size = plot_size*3),
     axis.text.y        = element_text(size = plot_size*3),
     legend.key.width  = unit(plot_size*0.1, "cm"),
@@ -741,7 +858,7 @@ p <- ggplot(MSE_mixture_temp, aes(x = factor(alpha), y = error,
       "Covariance function" = third,
       "Euclidean" = col5),
     breaks = c("Covariance function", "Euclidean"),
-    labels = c(expression(hat(Sigma)), expression(hat(Sigma)[eucl]))
+    labels = c(expression(hat(Sigma)), expression(hat(Sigma)[ben]))
   ) +
   scale_color_manual(values = c(
     "Covariance function" = third,
@@ -755,7 +872,7 @@ p <- ggplot(MSE_mixture_temp, aes(x = factor(alpha), y = error,
     legend.title       = element_blank(),
     legend.text        = element_text(size = plot_size*3),
     axis.title.x       = element_text(size = plot_size*3),
-    axis.title.y       = element_blank(),
+    axis.title.y       = element_text(size = plot_size*3),
     axis.text.x        = element_text(size = plot_size*3),
     axis.text.y        = element_text(size = plot_size*3),
     legend.key.width  = unit(plot_size*0.1, "cm"),
@@ -780,7 +897,7 @@ p <- ggplot(CRPS_mixture_temp, aes(x = factor(alpha), y = error,
       "Covariance function" = third,
       "Euclidean" = col5),
     breaks = c("Covariance function", "Euclidean"),
-    labels = c(expression(hat(Sigma)), expression(hat(Sigma)[eucl]))
+    labels = c(expression(hat(Sigma)), expression(hat(Sigma)[ben]))
   ) +
   scale_color_manual(values = c(
     "Covariance function" = third,
@@ -794,7 +911,7 @@ p <- ggplot(CRPS_mixture_temp, aes(x = factor(alpha), y = error,
     legend.title       = element_blank(),
     legend.text        = element_text(size = plot_size*3),
     axis.title.x       = element_text(size = plot_size*3),
-    axis.title.y       = element_blank(),
+    axis.title.y       = element_text(size = plot_size*3),
     axis.text.x        = element_text(size = plot_size*3),
     axis.text.y        = element_text(size = plot_size*3),
     legend.key.width  = unit(plot_size*0.1, "cm"),
