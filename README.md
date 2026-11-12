@@ -57,18 +57,20 @@ CovFlowSpatial/
 
 ## Data Access
 
-Two data sources are required. Both are freely accessible upon registration:
+Two data sources are required. Both are freely accessible upon registration.
+
+See [Data provenance and attribution](Data/README.md) for the source, processing steps, and reuse terms for the included data files.
 
 ### 1. RCP Projections — Copernicus Climate Change Service (C3S)
 
 - **Source:** Copernicus Climate Change Service (2020). *Marine biogeochemistry data for the Northwest European Shelf and Mediterranean Sea from 2006 up to 2100 derived from climate projections.*
 - **DOI:** [10.24381/cds.dcc9295c](https://doi.org/10.24381/cds.dcc9295c)
-- **Variables needed:** Monthly mean sea surface temperature (SST) and sea current velocity components (u, v) for August, RCP 4.5 scenario, Mediterranean domain, 2006–2099.
+- **Variables needed:** Monthly mean sea surface temperature (SST) and sea current velocity components (u, v) for August in the Mediterranean domain. The included files cover 2006–2022, 2050, and 2099 under RCP 4.5 and RCP 8.5. The main analyses use RCP 4.5.
 - **Registration:** Free account required at [cds.climate.copernicus.eu](https://cds.climate.copernicus.eu)
 
-### 2. Satellite Observations — Copernicus Marine Service (CMEMS)
+### 2. Ocean Observations — Copernicus Marine Service (CMEMS)
 
-- **Source:** E.U. Copernicus Marine Service Information (2020). *Multi Observation Global Ocean 3D Temperature Salinity Height Geostrophic Current and MLD.*
+- **Source:** E.U. Copernicus Marine Service Information. *Multi Observation Global Ocean 3D Temperature Salinity Height Geostrophic Current and MLD.*
 - **DOI:** [10.48670/moi-00052](https://doi.org/10.48670/moi-00052)
 - **Variables needed:** Monthly mean SST and current velocity for the Mediterranean Sea, August, 2006–2022.
 - **Registration:** Free account required at [marine.copernicus.eu](https://marine.copernicus.eu)
@@ -159,6 +161,6 @@ Before submission, update `container_img` and the Apptainer executable path in t
 
 ## License
 
-This repository is licensed under the [MIT License](LICENSE.txt).
+The code in this repository is licensed under the [MIT License](LICENSE.txt). See [Data provenance and attribution](Data/README.md) for the licenses and attribution of the Copernicus data and the sources of the derived results.
 
 ---
