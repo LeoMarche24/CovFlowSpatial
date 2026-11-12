@@ -420,7 +420,7 @@ empirical_df <- do.call(
     df <- covariances_correctsill[[index]][[i]]
     df$group <- factor(i)
     df
-  })s
+  })
 )
 
 xx <- seq(

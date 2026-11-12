@@ -20,7 +20,7 @@ col5 <- "#C51B8A"
 grey <- "grey80"
 
 domain <- "Sardinia"
-register_stadiamaps("424ec34b-4e14-4acc-8aa9-9e8ab4f4fbc9", write = FALSE)
+# Register your own Stadia Maps API key here with register_stadiamaps().
 load(paste0("Data/bbox_", domain, ".RData"))
 map <- get_stadiamap(bbox, zoom = 8, maptype = "alidade_smooth")
 
